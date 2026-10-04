@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D GLB 骨牌手繪模擬器 - 極簡無遮蔽 UI 版</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #080c14;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft JhengHei", sans-serif;
+            color: #fff;
+        }
+        #webgl-container {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        /* 頂部極簡 UI 面板 */
+        .ui-panel {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            padding: 8px 12px;
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+            z-index: 1000;
+            width: 90%;
+            max-width: 380px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            max-height: 420px;
+            overflow: hidden;
+        }
+        .ui-panel.collapsed {
+            max-height: 44px;
+            padding: 6px 10px;
+            background: rgba(15, 23, 42, 0.45);
+            border-color: rgba(255, 255, 255, 0.08);
+        }
+        .ui-panel.collapsed .ui-collapsible {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(-8px);
+        }
+        .ui-collapsible {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+        .ui-header-row, .ui-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px;
+        }
+        .text-input-row {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 4px 8px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .text-input-row input[type=text] {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #fff;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            outline: none;
+            user-select: text;
+            -webkit-user-select: text;
+        }
+        .text-input-row input[type=text]:focus {
+            border-color: #3b82f6;
+            background: rgba(255, 255, 255, 0.15);
+        }
+        .color-picker-row {
+            font-size: 11px;
+            color: #e5e7eb;
+            background: rgba(0, 0, 0, 0.15);
+            padding: 4px 10px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .color-picker-row input[type=color] {
+            border: none;
+            width: 26px;
+            height: 22px;
+            border-radius: 4px;
+            cursor: pointer;
+            background: none;
+        }
+        .btn-add-text {
+            background: linear-gradient(135deg, #ec4899, #be185d) !important;
+            box-shadow: 0 2px 8px rgba(236, 72, 153, 0.25) !important;
+        }
+        .slider-row {
+            font-size: 11px;
+            color: #9ca3af;
+            background: rgba(0, 0, 0, 0.15);
+            padding: 4px 10px;
+            border-radius: 10px;
+        }
+        .slider-row label {
+            white-space: nowrap;
+            color: #e5e7eb;
+            font-weight: bold;
+        }
+        .slider-row input[type=range] {
+            flex: 1;
+            accent-color: #3b82f6;
+            cursor: pointer;
+        }
+        .btn {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            color: #fff;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 10px;
+            font-weight: bold;
+            font-size: 12px;
+            cursor: pointer;
+            box-shadow: 0 3px 8px rgba(59, 130, 246, 0.25);
+            white-space: nowrap;
+            flex: 1;
+            text-align: center;
+        }
+        .btn:active { transform: scale(0.95); }
+        .btn-mode { background: #10b981; }
+        .btn-reset { 
+            background: rgba(255, 255, 255, 0.12); 
+            box-shadow: none;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            flex: 0.5;
+        }
+        .btn-toggle-panel {
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: #fff;
+            padding: 4px 8px;
+            font-size: 11px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        /* 右下角透亮圓角控制按鈕 */
+        .bottom-right-controls {
+            position: absolute;
+            bottom: 16px;
+            right: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: flex-end;
+            z-index: 1000;
+        }
+        .bottom-right-btn {
+            background: rgba(15, 23, 42, 0.6);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            padding: 8px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            transition: all 0.2s ease;
+        }
+        .bottom-right-btn.pan-btn.active {
+            background: rgba(236, 72, 153, 0.8);
+            border-color: rgba(244, 114, 182, 0.4);
+        }
+        .bottom-right-btn.draw-btn {
+            background: rgba(16, 185, 129, 0.8);
+            display: none;
+        }
+        .bottom-right-btn.draw-btn.paused {
+            background: rgba(239, 68, 68, 0.8);
+        }
+        .bottom-right-btn.line-btn.hidden, .bottom-right-btn.track-btn.off {
+            background: rgba(75, 85, 99, 0.6);
+            color: #d1d5db;
+        }
+
+        /* 底部提示小膠囊 */
+        .hint-badge {
+            position: absolute;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 4px 14px;
+            border-radius: 16px;
+            font-size: 11px;
+            color: #38bdf8;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+</head>
+<body>
+
+<div id="webgl-container"></div>
+
+<div class="ui-panel collapsed" id="uiPanel">
+    <div class="ui-header-row">
+        <button class="btn btn-mode" id="modeBtn">✏️️ 畫線模式</button>
+        <button class="btn" id="startBtn">▶ 推倒骨牌</button>
+        <button class="btn btn-reset" id="resetBtn">↺ 清除</button>
+        <button class="btn-toggle-panel" id="togglePanelBtn">🔽 展開</button>
+    </div>
+    
+    <div class="ui-collapsible">
+        <div class="ui-row text-input-row">
+            <input type="text" id="dominoTextInput" placeholder="輸入中文文字" value="𓃥 白六向您問安">
+            <button class="btn btn-add-text" id="addTextBtn">➕ 新增文字區</button>
+        </div>
+
+        <div class="ui-row color-picker-row">
+            <label for="dominoColorInput">🀄 骨牌：</label>
+            <input type="color" id="dominoColorInput" value="#f8fafc">
+            <label for="textColorInput" style="margin-left: 10px;">🎨 霓虹：</label>
+            <input type="color" id="textColorInput" value="#38bdf8">
+        </div>
+
+        <div class="ui-row slider-row">
+            <label for="sizeSlider">📏 尺寸：</label>
+            <input type="range" id="sizeSlider" min="0.5" max="2.0" step="0.1" value="1.0">
+            <span id="sizeVal">1.0x</span>
+        </div>
+        <div class="ui-row slider-row">
+            <label for="spacingSlider">↔ 間距：</label>
+            <input type="range" id="spacingSlider" min="1.0" max="2.5" step="0.1" value="1.4">
+            <span id="spacingVal">1.4x</span>
+        </div>
+    </div>
+</div>
+
+<div class="bottom-right-controls">
+    <button class="bottom-right-btn pan-btn" id="panToggleBtn">🖐 旋轉中（點擊切平移）</button>
+    <button class="bottom-right-btn draw-btn" id="drawToggleBtn">✏️ 畫線中（點擊暫停）</button>
+    <button class="bottom-right-btn track-btn" id="trackToggleBtn">🎥 追蹤攝影：開啟</button>
+    <button class="bottom-right-btn line-btn" id="lineToggleBtn">📍 標線：顯示中</button>
+</div>
+
+<div class="hint-badge" id="hintText">已極簡化 UI，減少畫面遮蔽！點擊頂部可隨時展開設定</div>
+
+<script>
+let scene, camera, camera3D, camera2D, renderer;
+let loadedGlbModel = null;
+
+let dominoes = [];
+let isSimulating = false;
+let appMode = 'VIEW';
+let isDrawEnabled = true;
+let isLineVisible = true;
+let isTrackingEnabled = true;
+let is3DPanMode = false;
+
+let globalSizeScale = 1.0; 
+let globalSpacingScale = 1.4;
+
+const BASE_DOMINO_HEIGHT = 1.8;
+
+let lineMeshes = [];
+let allStrokes3D = [];
+let currentStroke = [];
+
+let textBlocks = [];
+let activeTextBlockIndex = -1;
+let currentTextColor = "#38bdf8";
+let currentDominoColor = "#f8fafc";
+
+let fireworksParticles = [];
+
+let isDraggingText = false;
+let isResizingCorner = -1;
+
+let targetCameraPos = new THREE.Vector3(0, 14, 20);
+let targetLookAtPos = new THREE.Vector3(0, 0, 0);
+
+let bookmarkCameraPos = new THREE.Vector3(0, 14, 20);
+let bookmarkLookAtPos = new THREE.Vector3(0, 0, 0);
+
+let activeFallingDomino = null;
+let isUserInteracting = false;
+
+let orthoZoom = 15;
+let orthoCenter = new THREE.Vector2(0, 0);
+
+let touchStartCenter = { x: 0, y: 0 };
+let touchStartDist = 0;
+
+const uiPanel = document.getElementById('uiPanel');
+const togglePanelBtn = document.getElementById('togglePanelBtn');
+let isPanelCollapsed = true; // 預設收合以減少遮蔽
+
+function togglePanel(collapse) {
+    if (collapse !== undefined) {
+        isPanelCollapsed = collapse;
+    } else {
+        isPanelCollapsed = !isPanelCollapsed;
+    }
+
+    if (isPanelCollapsed) {
+        uiPanel.classList.add('collapsed');
+        togglePanelBtn.innerText = '🔽 展開';
+    } else {
+        uiPanel.classList.remove('collapsed');
+        togglePanelBtn.innerText = '🔼 收合';
+    }
+}
+
+togglePanelBtn.onclick = (e) => {
+    e.stopPropagation();
+    togglePanel();
+};
+
+function initThree() {
+    const container = document.getElementById('webgl-container');
+    const aspect = window.innerWidth / window.innerHeight;
+
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x080c14);
+
+    camera3D = new THREE.PerspectiveCamera(45, aspect, 0.05, 2000);
+    camera3D.position.set(0, 14, 20);
+    camera3D.lookAt(0, 0, 0);
+
+    camera2D = new THREE.OrthographicCamera(
+        -orthoZoom * aspect, orthoZoom * aspect,
+        orthoZoom, -orthoZoom,
+        0.1, 2000
+    );
+    camera2D.position.set(0, 100, 0);
+    camera2D.lookAt(0, 0, 0);
+
+    camera = camera3D;
+
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    dirLight.position.set(10, 20, 15);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 1024;
+    dirLight.shadow.mapSize.height = 1024;
+    scene.add(dirLight);
+
+    const gridHelper = new THREE.GridHelper(200, 200, 0x3b82f6, 0x1e293b);
+    gridHelper.position.y = -0.01;
+    scene.add(gridHelper);
+
+    const planeGeo = new THREE.PlaneGeometry(500, 500);
+    const planeMat = new THREE.ShadowMaterial({ opacity: 0.3 });
+    const groundPlane = new THREE.Mesh(planeGeo, planeMat);
+    groundPlane.rotation.x = -Math.PI / 2;
+    groundPlane.receiveShadow = true;
+    scene.add(groundPlane);
+
+    window.addEventListener('resize', onWindowResize);
+    loadGlbModel();
+    addTextBlock("𓃥 白六向您問安", currentTextColor, new THREE.Vector3(0, 0, 0));
+}
+
+function updateOrthoCamera() {
+    const aspect = window.innerWidth / window.innerHeight;
+    camera2D.left = -orthoZoom * aspect;
+    camera2D.right = orthoZoom * aspect;
+    camera2D.top = orthoZoom;
+    camera2D.bottom = -orthoZoom;
+    
+    camera2D.position.set(orthoCenter.x, 100, orthoCenter.y);
+    camera2D.lookAt(orthoCenter.x, 0, orthoCenter.y);
+    camera2D.updateProjectionMatrix();
+}
+
+function loadGlbModel() {
+    const loader = new THREE.GLTFLoader();
+    loader.load(
+        'Dominoes_tail.glb',
+        (gltf) => {
+            const rawScene = gltf.scene;
+            rawScene.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+
+                    if (child.material) {
+                        child.material.roughness = 0.75; 
+                        child.material.metalness = 0.1;
+                    }
+                }
+            });
+
+            const wrapper = new THREE.Group();
+            wrapper.add(rawScene);
+            rawScene.rotation.set(0.42, 0, 0);
+
+            const box = new THREE.Box3().setFromObject(wrapper);
+            const size = box.getSize(new THREE.Vector3());
+            const center = box.getCenter(new THREE.Vector3());
+            rawScene.position.set(-center.x, -box.min.y, -center.z);
+
+            if (size.y > 0) {
+                const scaleFactor = BASE_DOMINO_HEIGHT / size.y;
+                wrapper.scale.set(scaleFactor, scaleFactor, scaleFactor);
+            }
+
+            loadedGlbModel = wrapper;
+            applyDominoColorToModel();
+        },
+        undefined,
+        (error) => {
+            console.warn("GLB 載入備援模式", error);
+        }
+    );
+}
+
+function applyDominoColorToModel() {
+    if (!loadedGlbModel) return;
+    loadedGlbModel.traverse((child) => {
+        if (child.isMesh && child.material) {
+            child.material.color.set(currentDominoColor);
+        }
+    });
+
+    dominoes.forEach(d => {
+        if (d.mesh) {
+            d.mesh.traverse((c) => {
+                if (c.isMesh && c.material) {
+                    c.material.color.set(currentDominoColor);
+                }
+            });
+        }
+    });
+}
+
+class TextBlock {
+    constructor(text, color, position) {
+        this.text = text;
+        this.color = color;
+        this.pos = position.clone();
+        this.width = 8.0;
+        this.height = 3.5;
+        this.isRevealed = false;
+
+        this.group = new THREE.Group();
+        this.cornerHandles = [];
+        this.createMesh();
+    }
+
+    createMesh() {
+        if (this.group.parent) scene.remove(this.group);
+        this.group = new THREE.Group();
+        this.cornerHandles = [];
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        const aspect = this.width / this.height;
+        canvas.width = Math.min(1024, Math.max(256, Math.round(512 * aspect)));
+        canvas.height = 512;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        let lines = [this.text];
+        if (aspect < 1.4 && this.text.length > 2) {
+            const mid = Math.ceil(this.text.length / 2);
+            lines = [this.text.slice(0, mid), this.text.slice(mid)];
+        }
+
+        const safeWidth = canvas.width * 0.85;
+        const safeHeight = canvas.height * 0.85;
+
+        let fontSize = safeHeight / lines.length;
+
+        ctx.font = `Bold ${fontSize}px "Microsoft JhengHei", "PingFang TC", sans-serif`;
+        let maxLineWidth = 0;
+        lines.forEach(line => {
+            const w = ctx.measureText(line).width;
+            if (w > maxLineWidth) maxLineWidth = w;
+        });
+
+        if (maxLineWidth > safeWidth) {
+            fontSize *= (safeWidth / maxLineWidth);
+        }
+
+        ctx.font = `Bold ${fontSize}px "Microsoft JhengHei", "PingFang TC", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = this.color;
+        ctx.shadowColor = this.color;
+        ctx.shadowBlur = Math.min(25, fontSize * 0.3);
+
+        const lineHeight = fontSize * 1.15;
+        const startY = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2);
+
+        lines.forEach((line, idx) => {
+            ctx.fillText(line, canvas.width / 2, startY + idx * lineHeight);
+        });
+
+        const texture = new THREE.CanvasTexture(canvas);
+        
+        this.topTextMaterial = new THREE.MeshStandardMaterial({
+            map: texture,
+            transparent: true,
+            opacity: appMode === 'DRAW' ? 0.8 : 0,
+            emissive: new THREE.Color(this.color),
+            emissiveMap: texture,
+            emissiveIntensity: 0
+        });
+
+        this.sideMaterial = new THREE.MeshStandardMaterial({
+            color: 0x1e293b,
+            roughness: 0.8,
+            metalness: 0.2,
+            transparent: true,
+            opacity: appMode === 'DRAW' ? 0.6 : 0
+        });
+
+        const landThickness = 2.0; 
+        const boxGeo = new THREE.BoxGeometry(this.width, landThickness, this.height);
+        
+        const landMaterials = [
+            this.sideMaterial, this.sideMaterial, 
+            this.topTextMaterial, this.sideMaterial, 
+            this.sideMaterial, this.sideMaterial
+        ];
+
+        this.landMesh = new THREE.Mesh(boxGeo, landMaterials);
+        this.landMesh.position.y = appMode === 'DRAW' ? 0 : -landThickness / 2;
+        this.landMesh.castShadow = true;
+        this.landMesh.receiveShadow = true;
+        this.group.add(this.landMesh);
+
+        const wireGeo = new THREE.BoxGeometry(this.width, 0.08, this.height);
+        const wireMat = new THREE.MeshBasicMaterial({ 
+            color: 0xfbbf24, 
+            wireframe: true, 
+            transparent: true, 
+            opacity: appMode === 'DRAW' ? 0.7 : 0 
+        });
+        this.textBoundingBoxMesh = new THREE.Mesh(wireGeo, wireMat);
+        this.textBoundingBoxMesh.position.y = 0.05;
+        this.group.add(this.textBoundingBoxMesh);
+
+        const handleGeo = new THREE.BoxGeometry(0.5, 0.12, 0.5);
+        const handleMat = new THREE.MeshBasicMaterial({ 
+            color: 0xef4444, 
+            transparent: true, 
+            opacity: appMode === 'DRAW' ? 0.9 : 0 
+        });
+
+        const corners = [
+            [-this.width / 2, -this.height / 2],
+            [this.width / 2, -this.height / 2],
+            [this.width / 2, this.height / 2],
+            [-this.width / 2, this.height / 2]
+        ];
+
+        corners.forEach((c) => {
+            const handle = new THREE.Mesh(handleGeo, handleMat);
+            handle.position.set(c[0], 0.1, c[1]);
+            this.group.add(handle);
+            this.cornerHandles.push(handle);
+        });
+
+        this.group.position.copy(this.pos);
+        scene.add(this.group);
+    }
+
+    updateModeState() {
+        if (appMode === 'DRAW') {
+            if (this.topTextMaterial) this.topTextMaterial.opacity = 0.8;
+            if (this.sideMaterial) this.sideMaterial.opacity = 0.6;
+            if (this.landMesh) this.landMesh.position.y = 0;
+            if (this.textBoundingBoxMesh) this.textBoundingBoxMesh.material.opacity = 0.7;
+            this.cornerHandles.forEach(h => h.material.opacity = 0.9);
+        } else {
+            this.isRevealed = false;
+            if (this.topTextMaterial) {
+                this.topTextMaterial.opacity = 0;
+                this.topTextMaterial.emissiveIntensity = 0;
+            }
+            if (this.sideMaterial) this.sideMaterial.opacity = 0;
+            if (this.landMesh) this.landMesh.position.y = -1.0; 
+            if (this.textBoundingBoxMesh) this.textBoundingBoxMesh.material.opacity = 0;
+            this.cornerHandles.forEach(h => h.material.opacity = 0);
+        }
+    }
+
+    animateRise() {
+        if (this.isRevealed && this.landMesh) {
+            this.topTextMaterial.opacity = THREE.MathUtils.lerp(this.topTextMaterial.opacity, 1.0, 0.08);
+            this.sideMaterial.opacity = THREE.MathUtils.lerp(this.sideMaterial.opacity, 0.9, 0.08);
+            this.topTextMaterial.emissiveIntensity = THREE.MathUtils.lerp(this.topTextMaterial.emissiveIntensity, 3.5, 0.08);
+
+            this.landMesh.position.y = THREE.MathUtils.lerp(this.landMesh.position.y, 0.75, 0.08);
+        }
+    }
+
+    destroy() {
+        scene.remove(this.group);
+    }
+}
+
+function addTextBlock(text, color, pos) {
+    const tb = new TextBlock(text, color, pos);
+    textBlocks.push(tb);
+    return tb;
+}
+
+function spawnFireworksForBlock(tb) {
+    const particleCount = 130;
+    const geometry = new THREE.BufferGeometry();
+    const positions = [];
+    const velocities = [];
+    const colors = [];
+
+    const randomPalette = [
+        0x38bdf8, 0xec4899, 0xf59e0b, 0x10b981, 0x8b5cf6, 0xffffff, 0x00f0ff
+    ];
+
+    for (let i = 0; i < particleCount; i++) {
+        const px = tb.pos.x + (Math.random() - 0.5) * tb.width;
+        const py = 0.2;
+        const pz = tb.pos.z + (Math.random() - 0.5) * tb.height;
+
+        positions.push(px, py, pz);
+
+        const vx = (Math.random() - 0.5) * 0.38;
+        const vy = 0.38 + Math.random() * 0.45; 
+        const vz = (Math.random() - 0.5) * 0.38;
+
+        velocities.push(vx, vy, vz);
+
+        const hex = randomPalette[Math.floor(Math.random() * randomPalette.length)];
+        const c = new THREE.Color(hex);
+        colors.push(c.r, c.g, c.b);
+    }
+
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+    const material = new THREE.PointsMaterial({
+        size: 0.38,
+        vertexColors: true,
+        transparent: true,
+        opacity: 1.0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+    });
+
+    const pSystem = new THREE.Points(geometry, material);
+    pSystem.userData = { velocities: velocities, life: 1.0 };
+    scene.add(pSystem);
+    fireworksParticles.push(pSystem);
+}
+
+function updateFireworks() {
+    for (let i = fireworksParticles.length - 1; i >= 0; i--) {
+        const pSystem = fireworksParticles[i];
+        const positions = pSystem.geometry.attributes.position.array;
+        const vels = pSystem.userData.velocities;
+
+        pSystem.userData.life -= 0.018;
+
+        if (pSystem.userData.life <= 0) {
+            scene.remove(pSystem);
+            pSystem.geometry.dispose();
+            pSystem.material.dispose();
+            fireworksParticles.splice(i, 1);
+            continue;
+        }
+
+        pSystem.material.opacity = pSystem.userData.life;
+
+        for (let j = 0; j < positions.length / 3; j++) {
+            const idx = j * 3;
+
+            positions[idx] += vels[idx];
+            positions[idx + 1] += vels[idx + 1];
+            positions[idx + 2] += vels[idx + 2];
+
+            vels[idx + 1] -= 0.012; 
+            vels[idx] *= 0.98;
+            vels[idx + 2] *= 0.98;
+        }
+
+        pSystem.geometry.attributes.position.needsUpdate = true;
+    }
+}
+
+class DominoObject {
+    constructor(x, z, angleY, sizeScale = 1.0) {
+        this.x = x; this.z = z;
+        this.angleY = angleY;
+        this.sizeScale = sizeScale;
+        this.tilt = 0;
+        this.tiltVel = 0;
+        this.isTriggered = false;
+        this.neighbors = [];
+
+        this.pivot = new THREE.Group();
+        this.pivot.position.set(x, 0, z);
+        this.pivot.rotation.y = angleY;
+
+        this.animGroup = new THREE.Group();
+
+        if (loadedGlbModel) {
+            this.mesh = loadedGlbModel.clone();
+        } else {
+            const geo = new THREE.BoxGeometry(0.8, BASE_DOMINO_HEIGHT, 0.25);
+            geo.translate(0, BASE_DOMINO_HEIGHT / 2, 0);
+            const mat = new THREE.MeshStandardMaterial({ 
+                color: currentDominoColor, 
+                roughness: 0.75, 
+                metalness: 0.1 
+            });
+            this.mesh = new THREE.Mesh(geo, mat);
+            this.mesh.castShadow = true;
+        }
+
+        this.mesh.scale.multiplyScalar(sizeScale);
+
+        this.animGroup.add(this.mesh);
+        this.pivot.add(this.animGroup);
+        scene.add(this.pivot);
+    }
+
+    setAngleY(angleY) {
+        this.angleY = angleY;
+        this.pivot.rotation.y = angleY;
+    }
+
+    update() {
+        if (this.isTriggered && this.tilt < 1.35) {
+            const maxAngularSpeed = 0.055;
+            const gravityAccel = 0.003 + Math.sin(this.tilt) * 0.0025;
+
+            this.tiltVel = Math.min(this.tiltVel + gravityAccel, maxAngularSpeed);
+            this.tilt += this.tiltVel;
+
+            this.animGroup.rotation.x = this.tilt;
+
+            if (this.tilt < 1.1) {
+                activeFallingDomino = this;
+            }
+
+            textBlocks.forEach(tb => {
+                if (!tb.isRevealed) {
+                    const dx = Math.abs(this.x - tb.pos.x);
+                    const dz = Math.abs(this.z - tb.pos.z);
+                    
+                    if (dx <= (tb.width / 2) && dz <= (tb.height / 2) && this.tilt > 0.15) {
+                        tb.isRevealed = true;
+                        spawnFireworksForBlock(tb);
+                        document.getElementById('hintText').innerText = `🎆 骨牌推倒！「${tb.text}」隆起升起！`;
+                    }
+                }
+            });
+
+            const dominoHeight = BASE_DOMINO_HEIGHT * this.sizeScale;
+            const maxReachDistance = dominoHeight * 0.95;
+
+            for (let next of this.neighbors) {
+                if (!next.isTriggered) {
+                    const dx = next.x - this.x;
+                    const dz = next.z - this.z;
+                    const dist = Math.sqrt(dx * dx + dz * dz);
+
+                    if (dist < maxReachDistance && this.tilt > 0.15) {
+                        const forwardAngle = Math.atan2(dx, dz);
+                        next.setAngleY(forwardAngle);
+                        next.isTriggered = true;
+                    }
+                }
+            }
+        }
+    }
+
+    destroy() {
+        scene.remove(this.pivot);
+    }
+}
+
+const raycaster = new THREE.Raycaster();
+const mouseVec = new THREE.Vector2();
+const groundPlane3D = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+function getGroundIntersection(screenX, screenY) {
+    mouseVec.x = (screenX / window.innerWidth) * 2 - 1;
+    mouseVec.y = -(screenY / window.innerHeight) * 2 + 1;
+
+    raycaster.setFromCamera(mouseVec, camera);
+    const target = new THREE.Vector3();
+    raycaster.ray.intersectPlane(groundPlane3D, target);
+    return target;
+}
+
+function rebuildAllDominoes() {
+    dominoes.forEach(d => d.destroy());
+    dominoes = [];
+    isSimulating = false;
+    activeFallingDomino = null;
+
+    const spacing = 0.8 * globalSizeScale * globalSpacingScale;
+    const minNodeGap = spacing * 0.65;
+
+    allStrokes3D.forEach((points) => {
+        if (points.length < 2) return;
+
+        let accumulatedDist = 0;
+        let pPrev = points[0];
+        let lineDominoes = [];
+
+        for (let i = 1; i < points.length; i++) {
+            const pCurr = points[i];
+            const dx = pCurr.x - pPrev.x;
+            const dz = pCurr.z - pPrev.z;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+
+            if (dist > 0.05) {
+                accumulatedDist += dist;
+                if (accumulatedDist >= spacing || lineDominoes.length === 0) {
+                    let isDuplicate = false;
+                    for (let existing of dominoes) {
+                        const edx = pCurr.x - existing.x;
+                        const edz = pCurr.z - existing.z;
+                        if (Math.sqrt(edx * edx + edz * edz) < minNodeGap) {
+                            isDuplicate = true;
+                            break;
+                        }
+                    }
+
+                    if (!isDuplicate) {
+                        const angleY = Math.atan2(dx, dz);
+                        const d = new DominoObject(pCurr.x, pCurr.z, angleY, globalSizeScale);
+                        dominoes.push(d);
+                        lineDominoes.push(d);
+                    }
+                    accumulatedDist = 0;
+                }
+                pPrev = pCurr;
+            }
+        }
+
+        for (let i = 0; i < lineDominoes.length - 1; i++) {
+            lineDominoes[i].neighbors.push(lineDominoes[i + 1]);
+        }
+    });
+
+    const maxSensorDist = BASE_DOMINO_HEIGHT * globalSizeScale * 0.98;
+    for (let i = 0; i < dominoes.length; i++) {
+        for (let j = 0; j < dominoes.length; j++) {
+            if (i !== j) {
+                const d1 = dominoes[i];
+                const d2 = dominoes[j];
+                const dx = d2.x - d1.x;
+                const dz = d2.z - d1.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                
+                if (dist <= maxSensorDist && !d1.neighbors.includes(d2)) {
+                    d1.neighbors.push(d2);
+                }
+            }
+        }
+    }
+}
+
+function updateDrawLineMeshes() {
+    lineMeshes.forEach(m => scene.remove(m));
+    lineMeshes = [];
+
+    if (!isLineVisible && appMode === 'VIEW') return;
+
+    const strokesToRender = [...allStrokes3D];
+    if (currentStroke.length > 1) {
+        strokesToRender.push(currentStroke);
+    }
+
+    strokesToRender.forEach(pts => {
+        if (pts.length < 2) return;
+        const geometry = new THREE.BufferGeometry().setFromPoints(pts);
+        const material = new THREE.LineBasicMaterial({ color: 0xfbbf24, linewidth: 3 });
+        const lineMesh = new THREE.Line(geometry, material);
+        lineMesh.position.y = 0.02;
+        scene.add(lineMesh);
+        lineMeshes.push(lineMesh);
+    });
+}
+
+let isDragging = false;
+let dragButton = 0;
+let lastPointer = { x: 0, y: 0 };
+let activeTouchCount = 0;
+
+function onPointerDown(e) {
+    if (!e.target.closest('.ui-panel') && !e.target.closest('.bottom-right-btn')) {
+        togglePanel(true);
+    } else {
+        return;
+    }
+
+    isDragging = true;
+    isUserInteracting = true;
+    dragButton = e.button;
+    lastPointer = { x: e.clientX, y: e.clientY };
+
+    const pt = getGroundIntersection(e.clientX, e.clientY);
+
+    if (appMode === 'DRAW') {
+        for (let bIdx = 0; bIdx < textBlocks.length; bIdx++) {
+            const tb = textBlocks[bIdx];
+            for (let i = 0; i < tb.cornerHandles.length; i++) {
+                const hPos = new THREE.Vector3();
+                tb.cornerHandles[i].getWorldPosition(hPos);
+                if (pt.distanceTo(hPos) < 0.8) {
+                    activeTextBlockIndex = bIdx;
+                    isResizingCorner = i;
+                    return;
+                }
+            }
+
+            const distToText = pt.distanceTo(tb.pos);
+            if (distToText < Math.min(tb.width, tb.height) * 0.4) {
+                activeTextBlockIndex = bIdx;
+                isDraggingText = true;
+                return;
+            }
+        }
+    }
+
+    if (appMode === 'DRAW' && isDrawEnabled && (e.button === 0 || e.pointerType === 'touch') && activeTouchCount <= 1) {
+        currentStroke = [];
+        currentStroke.push(pt);
+    }
+}
+
+function pan3DCamera(dx, dy) {
+    const distance = targetCameraPos.distanceTo(targetLookAtPos);
+    const panFactor = distance * 0.0014;
+
+    const camMat = camera3D.matrixWorld.elements;
+    const camRight = new THREE.Vector3(camMat[0], camMat[1], camMat[2]).normalize();
+    const camUp = new THREE.Vector3(camMat[4], camMat[5], camMat[6]).normalize();
+
+    const panOffset = new THREE.Vector3()
+        .addScaledVector(camRight, -dx * panFactor)
+        .addScaledVector(camUp, dy * panFactor);
+
+    targetCameraPos.add(panOffset);
+    targetLookAtPos.add(panOffset);
+}
+
+function onPointerMove(e) {
+    if (!isDragging) return;
+
+    const dx = e.clientX - lastPointer.x;
+    const dy = e.clientY - lastPointer.y;
+
+    if (appMode === 'DRAW') {
+        if (isResizingCorner !== -1 && activeTextBlockIndex !== -1) {
+            const tb = textBlocks[activeTextBlockIndex];
+            const pt = getGroundIntersection(e.clientX, e.clientY);
+            const localPt = tb.group.worldToLocal(pt.clone());
+
+            tb.width = Math.max(2.0, Math.abs(localPt.x) * 2);
+            tb.height = Math.max(1.5, Math.abs(localPt.z) * 2);
+
+            tb.createMesh();
+            tb.updateModeState();
+        }
+        else if (isDraggingText && activeTextBlockIndex !== -1) {
+            const tb = textBlocks[activeTextBlockIndex];
+            const pt = getGroundIntersection(e.clientX, e.clientY);
+            tb.pos.copy(pt);
+            tb.group.position.copy(tb.pos);
+        }
+        else if (!isDrawEnabled && activeTouchCount <= 1) {
+            const aspect = window.innerWidth / window.innerHeight;
+            const factorX = (orthoZoom * 2 * aspect) / window.innerWidth;
+            const factorY = (orthoZoom * 2) / window.innerHeight;
+
+            orthoCenter.x -= dx * factorX;
+            orthoCenter.y -= dy * factorY; 
+            updateOrthoCamera();
+        } 
+        else if (isDrawEnabled && activeTouchCount <= 1) {
+            const pt = getGroundIntersection(e.clientX, e.clientY);
+            currentStroke.push(pt);
+            updateDrawLineMeshes();
+        }
+    } else {
+        if (is3DPanMode || e.buttons === 2 || dragButton === 2) {
+            pan3DCamera(dx, dy);
+        } else if (activeTouchCount < 2 && dragButton === 0) {
+            const radius = targetCameraPos.distanceTo(targetLookAtPos);
+            let theta = Math.atan2(targetCameraPos.x - targetLookAtPos.x, targetCameraPos.z - targetLookAtPos.z);
+            let phi = Math.acos((targetCameraPos.y - targetLookAtPos.y) / radius);
+
+            theta -= dx * 0.006;
+            phi -= dy * 0.006;
+            phi = Math.max(0.02, Math.min(Math.PI / 2 - 0.01, phi));
+
+            targetCameraPos.x = targetLookAtPos.x + radius * Math.sin(phi) * Math.sin(theta);
+            targetCameraPos.y = targetLookAtPos.y + radius * Math.cos(phi);
+            targetCameraPos.z = targetLookAtPos.z + radius * Math.sin(phi) * Math.cos(theta);
+        }
+    }
+
+    lastPointer = { x: e.clientX, y: e.clientY };
+}
+
+function onPointerUp() {
+    isDraggingText = false;
+    isResizingCorner = -1;
+
+    if (appMode === 'DRAW' && isDragging && isDrawEnabled && currentStroke.length > 1) {
+        allStrokes3D.push([...currentStroke]);
+        rebuildAllDominoes();
+        currentStroke = [];
+        updateDrawLineMeshes();
+    }
+    isDragging = false;
+}
+
+function zoomCamera(delta) {
+    isUserInteracting = true;
+    if (appMode === 'DRAW') {
+        const zoomFactor = delta > 0 ? 1.08 : 0.92;
+        orthoZoom = Math.max(1, Math.min(150, orthoZoom * zoomFactor));
+        updateOrthoCamera();
+    } else {
+        const dir = new THREE.Vector3().subVectors(targetCameraPos, targetLookAtPos);
+        const currentDist = dir.length();
+        const factor = delta > 0 ? 0.08 : -0.08;
+        const newDist = currentDist * (1 + factor);
+
+        if (newDist >= 0.3 && newDist <= 300) {
+            targetCameraPos.copy(targetLookAtPos).addScaledVector(dir.normalize(), newDist);
+        }
+    }
+}
+
+window.addEventListener('wheel', (e) => {
+    zoomCamera(e.deltaY);
+}, { passive: true });
+
+window.addEventListener('touchstart', (e) => {
+    activeTouchCount = e.touches.length;
+    if (e.touches.length === 2) {
+        touchStartCenter = {
+            x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+            y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+        };
+
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        touchStartDist = Math.sqrt(dx * dx + dy * dy);
+    }
+}, { passive: true });
+
+window.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2) {
+        const currentCenter = {
+            x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+            y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+        };
+
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const currentDist = Math.sqrt(dx * dx + dy * dy);
+
+        const distDiff = touchStartDist - currentDist;
+        if (Math.abs(distDiff) > 2.0) {
+            zoomCamera(distDiff * 2.5);
+            touchStartDist = currentDist;
+        }
+
+        if (appMode === 'VIEW') {
+            const panDx = currentCenter.x - touchStartCenter.x;
+            const panDy = currentCenter.y - touchStartCenter.y;
+            if (Math.abs(panDx) > 1 || Math.abs(panDy) > 1) {
+                pan3DCamera(panDx, panDy);
+                touchStartCenter = currentCenter;
+            }
+        }
+    }
+}, { passive: true });
+
+window.addEventListener('touchend', (e) => {
+    activeTouchCount = e.touches.length;
+}, { passive: true });
+
+window.addEventListener('pointerdown', onPointerDown);
+window.addEventListener('pointermove', onPointerMove);
+window.addEventListener('pointerup', onPointerUp);
+window.addEventListener('contextmenu', e => e.preventDefault());
+
+function onWindowResize() {
+    const aspect = window.innerWidth / window.innerHeight;
+    camera3D.aspect = aspect;
+    camera3D.updateProjectionMatrix();
+
+    updateOrthoCamera();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+document.getElementById('sizeSlider').addEventListener('input', (e) => {
+    globalSizeScale = parseFloat(e.target.value);
+    document.getElementById('sizeVal').innerText = `${globalSizeScale.toFixed(1)}x`;
+    if (allStrokes3D.length > 0) rebuildAllDominoes();
+});
+
+document.getElementById('spacingSlider').addEventListener('input', (e) => {
+    globalSpacingScale = parseFloat(e.target.value);
+    document.getElementById('spacingVal').innerText = `${globalSpacingScale.toFixed(1)}x`;
+    if (allStrokes3D.length > 0) rebuildAllDominoes();
+});
+
+document.getElementById('dominoColorInput').addEventListener('input', (e) => {
+    currentDominoColor = e.target.value;
+    applyDominoColorToModel();
+});
+
+document.getElementById('textColorInput').addEventListener('input', (e) => {
+    currentTextColor = e.target.value;
+    if (activeTextBlockIndex !== -1 && textBlocks[activeTextBlockIndex]) {
+        const tb = textBlocks[activeTextBlockIndex];
+        tb.color = currentTextColor;
+        tb.createMesh();
+        tb.updateModeState();
+    }
+});
+
+document.getElementById('addTextBtn').onclick = () => {
+    const txt = document.getElementById('dominoTextInput').value || "𓃥 白六";
+    const spawnOffset = (textBlocks.length % 5) * 3.5 - 7.0;
+    const newPos = new THREE.Vector3(spawnOffset, 0, spawnOffset * 0.5);
+    
+    const tb = addTextBlock(txt, currentTextColor, newPos);
+    tb.updateModeState();
+    document.getElementById('hintText').innerText = `已新增文字區「${txt}」！`;
+};
+
+const panToggleBtn = document.getElementById('panToggleBtn');
+const drawToggleBtn = document.getElementById('drawToggleBtn');
+const lineToggleBtn = document.getElementById('lineToggleBtn');
+const trackToggleBtn = document.getElementById('trackToggleBtn');
+
+panToggleBtn.onclick = () => {
+    is3DPanMode = !is3DPanMode;
+    if (is3DPanMode) {
+        panToggleBtn.innerText = '✋ 平移中（點擊切旋轉）';
+        panToggleBtn.classList.add('active');
+        document.getElementById('hintText').innerText = '3D 手勢：單指滑動平移全景';
+    } else {
+        panToggleBtn.innerText = '🖐 旋轉中（點擊切平移）';
+        panToggleBtn.classList.remove('active');
+        document.getElementById('hintText').innerText = '3D 手勢：單指滑動旋轉視角';
+    }
+};
+
+drawToggleBtn.onclick = () => {
+    isDrawEnabled = !isDrawEnabled;
+    if (isDrawEnabled) {
+        drawToggleBtn.innerText = '✏️ 畫線中（點擊暫停）';
+        drawToggleBtn.classList.remove('paused');
+        document.getElementById('hintText').innerText = '模式：✏ 單指畫線';
+    } else {
+        drawToggleBtn.innerText = '⏸️ 畫線已暫停';
+        drawToggleBtn.classList.add('paused');
+        document.getElementById('hintText').innerText = '模式：⏸ 單指平移，雙指縮放';
+    }
+};
+
+lineToggleBtn.onclick = () => {
+    isLineVisible = !isLineVisible;
+    if (isLineVisible) {
+        lineToggleBtn.innerText = '📍 標線：顯示';
+        lineToggleBtn.classList.remove('hidden');
+    } else {
+        lineToggleBtn.innerText = '🙈 標線：隱藏';
+        lineToggleBtn.classList.add('hidden');
+    }
+    updateDrawLineMeshes();
+};
+
+trackToggleBtn.onclick = () => {
+    isTrackingEnabled = !isTrackingEnabled;
+    if (isTrackingEnabled) {
+        trackToggleBtn.innerText = '🎥 追蹤：開啟';
+        trackToggleBtn.classList.remove('off');
+    } else {
+        trackToggleBtn.innerText = '🎥 追蹤：關閉';
+        trackToggleBtn.classList.add('off');
+    }
+};
+
+document.getElementById('modeBtn').onclick = () => {
+    if (appMode === 'VIEW') {
+        appMode = 'DRAW';
+        camera = camera2D;
+        document.getElementById('modeBtn').innerText = '🖐 視角模式';
+        document.getElementById('modeBtn').style.background = '#f59e0b';
+        document.getElementById('hintText').innerText = '目前模式：✏ 2D 正投影畫線';
+        
+        panToggleBtn.style.display = 'none';
+        drawToggleBtn.style.display = 'block';
+        lineToggleBtn.style.display = 'none';
+        trackToggleBtn.style.display = 'none';
+
+        textBlocks.forEach(tb => tb.updateModeState());
+        updateOrthoCamera();
+        updateDrawLineMeshes();
+    } else {
+        appMode = 'VIEW';
+        camera = camera3D;
+        document.getElementById('modeBtn').innerText = '✏️ 畫線模式';
+        document.getElementById('modeBtn').style.background = '#10b981';
+        document.getElementById('hintText').innerText = '目前模式：🖐 3D 視角觀察';
+
+        panToggleBtn.style.display = 'block';
+        drawToggleBtn.style.display = 'none';
+        lineToggleBtn.style.display = 'block';
+        trackToggleBtn.style.display = 'block';
+
+        textBlocks.forEach(tb => tb.updateModeState());
+        updateDrawLineMeshes();
+    }
+};
+
+document.getElementById('startBtn').onclick = () => {
+    if (dominoes.length > 0) {
+        bookmarkCameraPos.copy(targetCameraPos);
+        bookmarkLookAtPos.copy(targetLookAtPos);
+
+        dominoes[0].isTriggered = true;
+        isSimulating = true;
+        isUserInteracting = false;
+
+        if (appMode === 'DRAW') {
+            document.getElementById('modeBtn').click();
+        }
+    }
+};
+
+document.getElementById('resetBtn').onclick = () => {
+    dominoes.forEach(d => d.destroy());
+    dominoes = [];
+    allStrokes3D = [];
+    currentStroke = [];
+    lineMeshes.forEach(m => scene.remove(m));
+    lineMeshes = [];
+    
+    textBlocks.forEach(tb => tb.destroy());
+    textBlocks = [];
+    
+    isSimulating = false;
+    activeFallingDomino = null;
+    isUserInteracting = false;
+
+    fireworksParticles.forEach(p => scene.remove(p));
+    fireworksParticles = [];
+
+    addTextBlock("𓃥 白六向您問安", currentTextColor, new THREE.Vector3(0, 0, 0));
+};
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    textBlocks.forEach(tb => tb.animateRise());
+    updateFireworks();
+
+    if (isSimulating) {
+        let isAnyDominoStillFalling = false;
+
+        dominoes.forEach(d => {
+            d.update();
+            if (d.isTriggered && d.tilt < 1.35) {
+                isAnyDominoStillFalling = true;
+            }
+        });
+
+        if (isAnyDominoStillFalling) {
+            if (activeFallingDomino && isTrackingEnabled && !isUserInteracting && appMode === 'VIEW') {
+                const targetPos = new THREE.Vector3(activeFallingDomino.x, 0, activeFallingDomino.z);
+                targetLookAtPos.lerp(targetPos, 0.08);
+
+                const offset = new THREE.Vector3(0, 10, 14);
+                targetCameraPos.copy(targetLookAtPos).add(offset);
+            }
+        } 
+        else {
+            activeFallingDomino = null;
+            if (isTrackingEnabled && !isUserInteracting && appMode === 'VIEW') {
+                targetCameraPos.lerp(bookmarkCameraPos, 0.05);
+                targetLookAtPos.lerp(bookmarkLookAtPos, 0.05);
+            }
+        }
+    }
+
+    if (appMode === 'VIEW') {
+        camera3D.position.lerp(targetCameraPos, 0.1);
+        camera3D.lookAt(targetLookAtPos);
+    }
+
+    renderer.render(scene, camera);
+}
+
+initThree();
+animate();
+</script>
+</body>
+</html>

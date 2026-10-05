@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>3D GLB 骨牌手繪模擬器 - 兩點陸橋與暫停畫線優化版</title>
+    <title>3D GLB 骨牌手繪模擬器 - 觀察模式隱藏陸橋球標版</title>
     <style>
         * {
             box-sizing: border-box;
@@ -385,6 +385,14 @@ function cancelAddBridge() {
     const btn = document.getElementById('addBridgeBtn');
     btn.classList.remove('active');
     btn.innerText = '🌉 新增陸橋';
+}
+
+function updateBridgeHandlesVisibility() {
+    const isVisible = (appMode === 'DRAW');
+    bridgeControls.forEach(ctrl => {
+        if (ctrl.startMesh) ctrl.startMesh.visible = isVisible;
+        if (ctrl.endMesh) ctrl.endMesh.visible = isVisible;
+    });
 }
 
 function setSimulationUiState(hide) {
@@ -991,6 +999,7 @@ function createRedHandleMesh() {
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = true;
+    mesh.visible = (appMode === 'DRAW');
     return mesh;
 }
 
@@ -1059,7 +1068,6 @@ function handleTwoPointBridgePlacement(clickPt) {
     }
 }
 
-// 計算陸橋高程
 function generate3DPathWithBridges(rawStrokes) {
     const bridgeElevations = rawStrokes.map(st => st.map(() => 0));
 
@@ -1074,8 +1082,9 @@ function generate3DPathWithBridges(rawStrokes) {
         if (ctrl.startMesh && stroke[startIdx]) ctrl.startMesh.position.set(stroke[startIdx].x, 0.4, stroke[startIdx].z);
         if (ctrl.endMesh && stroke[endIdx]) ctrl.endMesh.position.set(stroke[endIdx].x, 0.4, stroke[endIdx].z);
 
-        if (ctrl.startMesh) ctrl.startMesh.visible = true;
-        if (ctrl.endMesh) ctrl.endMesh.visible = true;
+        const isVisible = (appMode === 'DRAW');
+        if (ctrl.startMesh) ctrl.startMesh.visible = isVisible;
+        if (ctrl.endMesh) ctrl.endMesh.visible = isVisible;
 
         for (let i = startIdx; i <= endIdx; i++) {
             let ratio = 0;
@@ -1245,19 +1254,19 @@ function onPointerDown(e) {
         return;
     }
 
-    // 模式 2：拖曳紅球微調起訖點
-    for (let ctrl of bridgeControls) {
-        if (ctrl.startMesh && pt.distanceTo(ctrl.startMesh.position) < 1.6) {
-            activeBridgeControl = { ctrl: ctrl, isStart: true };
-            return;
-        }
-        if (ctrl.endMesh && pt.distanceTo(ctrl.endMesh.position) < 1.6) {
-            activeBridgeControl = { ctrl: ctrl, isStart: false };
-            return;
-        }
-    }
-
+    // 模式 2：拖曳紅球微調起訖點（僅在 DRAW 模式生效）
     if (appMode === 'DRAW') {
+        for (let ctrl of bridgeControls) {
+            if (ctrl.startMesh && pt.distanceTo(ctrl.startMesh.position) < 1.6) {
+                activeBridgeControl = { ctrl: ctrl, isStart: true };
+                return;
+            }
+            if (ctrl.endMesh && pt.distanceTo(ctrl.endMesh.position) < 1.6) {
+                activeBridgeControl = { ctrl: ctrl, isStart: false };
+                return;
+            }
+        }
+
         for (let bIdx = 0; bIdx < textBlocks.length; bIdx++) {
             const tb = textBlocks[bIdx];
             for (let i = 0; i < tb.cornerHandles.length; i++) {
@@ -1493,7 +1502,6 @@ document.getElementById('addBridgeBtn').onclick = () => {
         btn.classList.add('active');
         btn.innerText = '📍 請點第一點(起點)';
 
-        // 🎯 自動暫停畫線，避免誤畫線條
         isDrawEnabled = false;
         drawToggleBtn.innerText = '⏸ 畫線已暫停';
         drawToggleBtn.classList.add('paused');
@@ -1566,7 +1574,6 @@ panToggleBtn.onclick = () => {
 };
 
 drawToggleBtn.onclick = () => {
-    // 🎯 若未完成陸橋設定就點擊切換畫線，取消該陸橋設定
     if (isAddingBridge) {
         cancelAddBridge();
     }
@@ -1603,6 +1610,7 @@ document.getElementById('modeBtn').onclick = () => {
         drawToggleBtn.style.display = 'block';
 
         textBlocks.forEach(tb => tb.updateModeState());
+        updateBridgeHandlesVisibility();
         updateOrthoCamera();
         updateDrawLineMeshes();
     } else {
@@ -1618,6 +1626,7 @@ document.getElementById('modeBtn').onclick = () => {
         drawToggleBtn.style.display = 'none';
 
         textBlocks.forEach(tb => tb.updateModeState());
+        updateBridgeHandlesVisibility();
         updateDrawLineMeshes();
     }
 };

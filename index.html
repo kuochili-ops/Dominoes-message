@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>3D GLB 骨牌手繪模擬器 - 觀察模式隱藏陸橋球標版</title>
+    <title>3D GLB 骨牌手繪模擬器 - 多色彩筆劃骨牌版</title>
     <style>
         * {
             box-sizing: border-box;
@@ -272,7 +272,7 @@
         </div>
 
         <div class="ui-row color-picker-row">
-            <label for="dominoColorInput">🀄 骨牌：</label>
+            <label for="dominoColorInput">🀄 骨牌顏色：</label>
             <input type="color" id="dominoColorInput" value="#f8fafc">
             <label for="textColorInput" style="margin-left: 10px;">🎨 霓虹：</label>
             <input type="color" id="textColorInput" value="#38bdf8">
@@ -319,7 +319,7 @@ const BASE_DOMINO_HEIGHT = 1.8;
 const BRIDGE_MAX_HEIGHT = 4.2;
 
 let lineMeshes = [];
-let allStrokes3D = [];
+let allStrokes3D = []; // 儲存物體 { points: [...], color: '#ffffff' }
 let currentStroke = [];
 
 // 兩點式手動陸橋建置狀態
@@ -563,32 +563,12 @@ function loadGlbModel() {
             }
 
             loadedGlbModel = wrapper;
-            applyDominoColorToModel();
         },
         undefined,
         (error) => {
             console.warn("GLB 載入備援模式", error);
         }
     );
-}
-
-function applyDominoColorToModel() {
-    if (!loadedGlbModel) return;
-    loadedGlbModel.traverse((child) => {
-        if (child.isMesh && child.material) {
-            child.material.color.set(currentDominoColor);
-        }
-    });
-
-    dominoes.forEach(d => {
-        if (d.mesh) {
-            d.mesh.traverse((c) => {
-                if (c.isMesh && c.material) {
-                    c.material.color.set(currentDominoColor);
-                }
-            });
-        }
-    });
 }
 
 class TextBlock {
@@ -878,12 +858,13 @@ function updateFireworks() {
 }
 
 class DominoObject {
-    constructor(x, y, z, angleY, sizeScale = 1.0) {
+    constructor(x, y, z, angleY, sizeScale = 1.0, color = "#f8fafc") {
         this.x = x; 
         this.y = y; 
         this.z = z;
         this.angleY = angleY;
         this.sizeScale = sizeScale;
+        this.color = color;
         this.tilt = 0;
         this.tiltVel = 0;
         this.isTriggered = false;
@@ -897,11 +878,17 @@ class DominoObject {
 
         if (loadedGlbModel) {
             this.mesh = loadedGlbModel.clone();
+            this.mesh.traverse((child) => {
+                if (child.isMesh && child.material) {
+                    child.material = child.material.clone();
+                    child.material.color.set(color);
+                }
+            });
         } else {
             const geo = new THREE.BoxGeometry(0.8, BASE_DOMINO_HEIGHT, 0.25);
             geo.translate(0, BASE_DOMINO_HEIGHT / 2, 0);
             const mat = new THREE.MeshStandardMaterial({ 
-                color: currentDominoColor, 
+                color: color, 
                 roughness: 0.75, 
                 metalness: 0.1 
             });
@@ -1008,8 +995,8 @@ function findClosestStrokeAndIndex(pt) {
     let closestNodeIdx = -1;
     let minDist = Infinity;
 
-    allStrokes3D.forEach((stroke, sIdx) => {
-        stroke.forEach((p, pIdx) => {
+    allStrokes3D.forEach((strokeObj, sIdx) => {
+        strokeObj.points.forEach((p, pIdx) => {
             const d = pt.distanceTo(new THREE.Vector3(p.x, 0, p.z));
             if (d < minDist) {
                 minDist = d;
@@ -1035,17 +1022,18 @@ function handleTwoPointBridgePlacement(clickPt) {
         btn.innerText = '📍 請點第二點(頂點)';
     } else {
         const strokeIdx = hit.strokeIdx;
-        const stroke = allStrokes3D[strokeIdx];
-        if (!stroke) {
+        const strokeObj = allStrokes3D[strokeIdx];
+        if (!strokeObj || !strokeObj.points) {
             cancelAddBridge();
             return;
         }
 
+        const points = strokeObj.points;
         const startIdx = Math.min(bridgeFirstPoint.nodeIdx, hit.nodeIdx);
         const apexIdx = Math.max(bridgeFirstPoint.nodeIdx, hit.nodeIdx);
 
         const rampSpan = Math.max(3, apexIdx - startIdx);
-        const endIdx = Math.min(stroke.length - 1, apexIdx + rampSpan);
+        const endIdx = Math.min(points.length - 1, apexIdx + rampSpan);
 
         const startMesh = createRedHandleMesh();
         const endMesh = createRedHandleMesh();
@@ -1068,19 +1056,20 @@ function handleTwoPointBridgePlacement(clickPt) {
     }
 }
 
-function generate3DPathWithBridges(rawStrokes) {
-    const bridgeElevations = rawStrokes.map(st => st.map(() => 0));
+function generate3DPathWithBridges(rawStrokeObjs) {
+    const bridgeElevations = rawStrokeObjs.map(st => st.points.map(() => 0));
 
     bridgeControls.forEach(ctrl => {
-        const stroke = rawStrokes[ctrl.strokeIdx];
-        if (!stroke || ctrl.startIdx >= ctrl.endIdx) return;
+        const strokeObj = rawStrokeObjs[ctrl.strokeIdx];
+        if (!strokeObj || ctrl.startIdx >= ctrl.endIdx) return;
 
+        const points = strokeObj.points;
         const startIdx = ctrl.startIdx;
         const endIdx = ctrl.endIdx;
         const centerIdx = Math.floor((startIdx + endIdx) / 2);
 
-        if (ctrl.startMesh && stroke[startIdx]) ctrl.startMesh.position.set(stroke[startIdx].x, 0.4, stroke[startIdx].z);
-        if (ctrl.endMesh && stroke[endIdx]) ctrl.endMesh.position.set(stroke[endIdx].x, 0.4, stroke[endIdx].z);
+        if (ctrl.startMesh && points[startIdx]) ctrl.startMesh.position.set(points[startIdx].x, 0.4, points[startIdx].z);
+        if (ctrl.endMesh && points[endIdx]) ctrl.endMesh.position.set(points[endIdx].x, 0.4, points[endIdx].z);
 
         const isVisible = (appMode === 'DRAW');
         if (ctrl.startMesh) ctrl.startMesh.visible = isVisible;
@@ -1102,8 +1091,11 @@ function generate3DPathWithBridges(rawStrokes) {
         }
     });
 
-    return rawStrokes.map((stroke, sIdx) => {
-        return stroke.map((p, pIdx) => new THREE.Vector3(p.x, bridgeElevations[sIdx][pIdx], p.z));
+    return rawStrokeObjs.map((strokeObj, sIdx) => {
+        return {
+            points: strokeObj.points.map((p, pIdx) => new THREE.Vector3(p.x, bridgeElevations[sIdx][pIdx], p.z)),
+            color: strokeObj.color
+        };
     });
 }
 
@@ -1117,7 +1109,9 @@ function rebuildAllDominoes() {
     const spacing = 0.8 * globalSizeScale * globalSpacingScale;
     const processed3DStrokes = generate3DPathWithBridges(allStrokes3D);
 
-    processed3DStrokes.forEach((points) => {
+    processed3DStrokes.forEach((strokeObj) => {
+        const points = strokeObj.points;
+        const strokeColor = strokeObj.color || "#f8fafc";
         if (points.length < 2) return;
 
         let accumulatedDist = 0;
@@ -1150,7 +1144,7 @@ function rebuildAllDominoes() {
 
                     if (!isDuplicate) {
                         const angleY = Math.atan2(dx, dz);
-                        const d = new DominoObject(pCurr.x, pCurr.y, pCurr.z, angleY, globalSizeScale);
+                        const d = new DominoObject(pCurr.x, pCurr.y, pCurr.z, angleY, globalSizeScale, strokeColor);
                         dominoes.push(d);
                         lineDominoes.push(d);
                     }
@@ -1213,15 +1207,16 @@ function updateDrawLineMeshes() {
 
     const strokesToRender = [...allStrokes3D];
     if (currentStroke.length > 1) {
-        strokesToRender.push(currentStroke);
+        strokesToRender.push({ points: currentStroke, color: currentDominoColor });
     }
 
     const processed3DStrokes = generate3DPathWithBridges(strokesToRender);
 
-    processed3DStrokes.forEach(pts => {
+    processed3DStrokes.forEach(strokeObj => {
+        const pts = strokeObj.points;
         if (pts.length < 2) return;
         const geometry = new THREE.BufferGeometry().setFromPoints(pts);
-        const material = new THREE.LineBasicMaterial({ color: 0xfbbf24, linewidth: 3 });
+        const material = new THREE.LineBasicMaterial({ color: strokeObj.color || 0xfbbf24, linewidth: 3 });
         const lineMesh = new THREE.Line(geometry, material);
         lineMesh.position.y += 0.02;
         scene.add(lineMesh);
@@ -1248,13 +1243,11 @@ function onPointerDown(e) {
 
     const pt = getGroundIntersection(e.clientX, e.clientY);
 
-    // 模式 1：新增陸橋兩點選擇
     if (isAddingBridge) {
         handleTwoPointBridgePlacement(pt);
         return;
     }
 
-    // 模式 2：拖曳紅球微調起訖點（僅在 DRAW 模式生效）
     if (appMode === 'DRAW') {
         for (let ctrl of bridgeControls) {
             if (ctrl.startMesh && pt.distanceTo(ctrl.startMesh.position) < 1.6) {
@@ -1319,12 +1312,12 @@ function onPointerMove(e) {
     if (activeBridgeControl) {
         const pt = getGroundIntersection(e.clientX, e.clientY);
         const ctrl = activeBridgeControl.ctrl;
-        const stroke = allStrokes3D[ctrl.strokeIdx];
+        const strokeObj = allStrokes3D[ctrl.strokeIdx];
 
-        if (stroke) {
+        if (strokeObj && strokeObj.points) {
             let closestIdx = 0;
             let minDist = Infinity;
-            stroke.forEach((p, idx) => {
+            strokeObj.points.forEach((p, idx) => {
                 const d = pt.distanceTo(new THREE.Vector3(p.x, 0, p.z));
                 if (d < minDist) {
                     minDist = d;
@@ -1401,7 +1394,10 @@ function onPointerUp() {
     activeBridgeControl = null;
 
     if (appMode === 'DRAW' && isDragging && isDrawEnabled && !isAddingBridge && currentStroke.length > 1) {
-        allStrokes3D.push([...currentStroke]);
+        allStrokes3D.push({
+            points: [...currentStroke],
+            color: currentDominoColor
+        });
         rebuildAllDominoes();
         currentStroke = [];
         updateDrawLineMeshes();
@@ -1524,7 +1520,6 @@ document.getElementById('spacingSlider').addEventListener('input', (e) => {
 
 document.getElementById('dominoColorInput').addEventListener('input', (e) => {
     currentDominoColor = e.target.value;
-    applyDominoColorToModel();
 });
 
 document.getElementById('textColorInput').addEventListener('input', (e) => {

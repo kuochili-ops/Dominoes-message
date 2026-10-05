@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>3D GLB 骨牌手繪模擬器 - 介面修復版</title>
+    <title>3D GLB 骨牌手繪模擬器 - 兩點陸橋與暫停畫線優化版</title>
     <style>
         * {
             box-sizing: border-box;
@@ -28,7 +28,7 @@
             top: 0;
             left: 0;
         }
-        /* 頂部極簡 UI 面板 */
+        /* 頂部 UI 面板 */
         .ui-panel {
             position: absolute;
             top: 10px;
@@ -104,10 +104,6 @@
             user-select: text;
             -webkit-user-select: text;
         }
-        .text-input-row input[type=text]:focus {
-            border-color: #3b82f6;
-            background: rgba(255, 255, 255, 0.15);
-        }
         .color-picker-row {
             font-size: 11px;
             color: #e5e7eb;
@@ -129,6 +125,19 @@
         .btn-add-text {
             background: linear-gradient(135deg, #ec4899, #be185d) !important;
             box-shadow: 0 2px 8px rgba(236, 72, 153, 0.25) !important;
+        }
+        .btn-add-bridge {
+            background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+            box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3) !important;
+        }
+        .btn-add-bridge.active {
+            background: linear-gradient(135deg, #ef4444, #b91c1c) !important;
+            animation: pulse 1.2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.6; }
+            100% { opacity: 1; }
         }
         .btn-del-text {
             background: rgba(239, 68, 68, 0.25) !important;
@@ -198,7 +207,6 @@
             flex-shrink: 0;
         }
 
-        /* 底部橫向並排控制按鈕 */
         .bottom-right-controls {
             position: absolute;
             bottom: 16px;
@@ -223,9 +231,7 @@
             transition: opacity 0.3s ease, transform 0.3s ease;
             white-space: nowrap;
         }
-        .bottom-right-btn.sim-hidden {
-            display: none !important;
-        }
+        .bottom-right-btn.sim-hidden { display: none !important; }
         .bottom-right-btn.pan-btn.active {
             background: rgba(236, 72, 153, 0.8);
             border-color: rgba(244, 114, 182, 0.4);
@@ -234,9 +240,7 @@
             background: rgba(16, 185, 129, 0.8);
             display: none;
         }
-        .bottom-right-btn.draw-btn.paused {
-            background: rgba(239, 68, 68, 0.8);
-        }
+        .bottom-right-btn.draw-btn.paused { background: rgba(239, 68, 68, 0.8); }
         .bottom-right-btn.track-btn.off {
             background: rgba(75, 85, 99, 0.6);
             color: #d1d5db;
@@ -261,9 +265,10 @@
     
     <div class="ui-collapsible">
         <div class="ui-row text-input-row">
+            <button class="btn btn-add-bridge" id="addBridgeBtn">🌉 新增陸橋</button>
             <input type="text" id="dominoTextInput" placeholder="輸入中文文字" value="𓃥 白六向您問安">
-            <button class="btn btn-add-text" id="addTextBtn">➕ 新增文字區</button>
-            <button class="btn btn-del-text" id="delTextBtn">🗑️ 刪除</button>
+            <button class="btn btn-add-text" id="addTextBtn">➕ 文字區</button>
+            <button class="btn btn-del-text" id="delTextBtn">🗑️</button>
         </div>
 
         <div class="ui-row color-picker-row">
@@ -303,7 +308,6 @@ let isDrawEnabled = true;
 let isTrackingEnabled = true;
 let is3DPanMode = false;
 
-// 錄影模組變數
 let mediaRecorder = null;
 let recordedChunks = [];
 let isRecording = false;
@@ -312,10 +316,17 @@ let globalSizeScale = 1.0;
 let globalSpacingScale = 1.4;
 
 const BASE_DOMINO_HEIGHT = 1.8;
+const BRIDGE_MAX_HEIGHT = 4.2;
 
 let lineMeshes = [];
 let allStrokes3D = [];
 let currentStroke = [];
+
+// 兩點式手動陸橋建置狀態
+let isAddingBridge = false;
+let bridgeFirstPoint = null; 
+let bridgeControls = []; 
+let activeBridgeControl = null;
 
 let textBlocks = [];
 let activeTextBlockIndex = -1;
@@ -367,6 +378,14 @@ togglePanelBtn.onclick = (e) => {
     e.stopPropagation();
     togglePanel();
 };
+
+function cancelAddBridge() {
+    isAddingBridge = false;
+    bridgeFirstPoint = null;
+    const btn = document.getElementById('addBridgeBtn');
+    btn.classList.remove('active');
+    btn.innerText = '🌉 新增陸橋';
+}
 
 function setSimulationUiState(hide) {
     if (hide) {
@@ -798,8 +817,8 @@ function spawnFireworksForBlock(tb) {
         colors.push(c.r, c.g, c.b);
     }
 
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3));
 
     const material = new THREE.PointsMaterial({
         size: 0.38,
@@ -851,8 +870,10 @@ function updateFireworks() {
 }
 
 class DominoObject {
-    constructor(x, z, angleY, sizeScale = 1.0) {
-        this.x = x; this.z = z;
+    constructor(x, y, z, angleY, sizeScale = 1.0) {
+        this.x = x; 
+        this.y = y; 
+        this.z = z;
         this.angleY = angleY;
         this.sizeScale = sizeScale;
         this.tilt = 0;
@@ -861,7 +882,7 @@ class DominoObject {
         this.neighbors = [];
 
         this.pivot = new THREE.Group();
-        this.pivot.position.set(x, 0, z);
+        this.pivot.position.set(x, y, z);
         this.pivot.rotation.y = angleY;
 
         this.animGroup = new THREE.Group();
@@ -920,13 +941,14 @@ class DominoObject {
             });
 
             const dominoHeight = BASE_DOMINO_HEIGHT * this.sizeScale;
-            const maxReachDistance = dominoHeight * 1.12;
+            const maxReachDistance = dominoHeight * 1.15;
 
             for (let next of this.neighbors) {
                 if (!next.isTriggered) {
                     const dx = next.x - this.x;
+                    const dy = next.y - this.y;
                     const dz = next.z - this.z;
-                    const dist = Math.sqrt(dx * dx + dz * dz);
+                    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
                     if (dist < maxReachDistance && this.tilt > 0.15) {
                         const forwardAngle = Math.atan2(dx, dz);
@@ -959,16 +981,134 @@ function getGroundIntersection(screenX, screenY) {
     return target;
 }
 
+function createRedHandleMesh() {
+    const geo = new THREE.SphereGeometry(0.55, 16, 16);
+    const mat = new THREE.MeshStandardMaterial({
+        color: 0xef4444,
+        emissive: 0xd97706,
+        roughness: 0.2,
+        metalness: 0.1
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.castShadow = true;
+    return mesh;
+}
+
+function findClosestStrokeAndIndex(pt) {
+    let closestStrokeIdx = -1;
+    let closestNodeIdx = -1;
+    let minDist = Infinity;
+
+    allStrokes3D.forEach((stroke, sIdx) => {
+        stroke.forEach((p, pIdx) => {
+            const d = pt.distanceTo(new THREE.Vector3(p.x, 0, p.z));
+            if (d < minDist) {
+                minDist = d;
+                closestStrokeIdx = sIdx;
+                closestNodeIdx = pIdx;
+            }
+        });
+    });
+
+    if (minDist < 6.0) {
+        return { strokeIdx: closestStrokeIdx, nodeIdx: closestNodeIdx };
+    }
+    return null;
+}
+
+function handleTwoPointBridgePlacement(clickPt) {
+    const hit = findClosestStrokeAndIndex(clickPt);
+    if (!hit) return;
+
+    if (!bridgeFirstPoint) {
+        bridgeFirstPoint = hit;
+        const btn = document.getElementById('addBridgeBtn');
+        btn.innerText = '📍 請點第二點(頂點)';
+    } else {
+        const strokeIdx = hit.strokeIdx;
+        const stroke = allStrokes3D[strokeIdx];
+        if (!stroke) {
+            cancelAddBridge();
+            return;
+        }
+
+        const startIdx = Math.min(bridgeFirstPoint.nodeIdx, hit.nodeIdx);
+        const apexIdx = Math.max(bridgeFirstPoint.nodeIdx, hit.nodeIdx);
+
+        const rampSpan = Math.max(3, apexIdx - startIdx);
+        const endIdx = Math.min(stroke.length - 1, apexIdx + rampSpan);
+
+        const startMesh = createRedHandleMesh();
+        const endMesh = createRedHandleMesh();
+
+        scene.add(startMesh);
+        scene.add(endMesh);
+
+        bridgeControls.push({
+            strokeIdx: strokeIdx,
+            startIdx: startIdx,
+            endIdx: endIdx,
+            startMesh: startMesh,
+            endMesh: endMesh
+        });
+
+        cancelAddBridge();
+
+        rebuildAllDominoes();
+        updateDrawLineMeshes();
+    }
+}
+
+// 計算陸橋高程
+function generate3DPathWithBridges(rawStrokes) {
+    const bridgeElevations = rawStrokes.map(st => st.map(() => 0));
+
+    bridgeControls.forEach(ctrl => {
+        const stroke = rawStrokes[ctrl.strokeIdx];
+        if (!stroke || ctrl.startIdx >= ctrl.endIdx) return;
+
+        const startIdx = ctrl.startIdx;
+        const endIdx = ctrl.endIdx;
+        const centerIdx = Math.floor((startIdx + endIdx) / 2);
+
+        if (ctrl.startMesh && stroke[startIdx]) ctrl.startMesh.position.set(stroke[startIdx].x, 0.4, stroke[startIdx].z);
+        if (ctrl.endMesh && stroke[endIdx]) ctrl.endMesh.position.set(stroke[endIdx].x, 0.4, stroke[endIdx].z);
+
+        if (ctrl.startMesh) ctrl.startMesh.visible = true;
+        if (ctrl.endMesh) ctrl.endMesh.visible = true;
+
+        for (let i = startIdx; i <= endIdx; i++) {
+            let ratio = 0;
+            if (i <= centerIdx) {
+                ratio = (i - startIdx) / Math.max(1, (centerIdx - startIdx));
+            } else {
+                ratio = (endIdx - i) / Math.max(1, (endIdx - centerIdx));
+            }
+            ratio = Math.max(0, Math.min(1, ratio));
+
+            const elev = Math.sin(ratio * Math.PI / 2) * BRIDGE_MAX_HEIGHT;
+            if (elev > bridgeElevations[ctrl.strokeIdx][i]) {
+                bridgeElevations[ctrl.strokeIdx][i] = elev;
+            }
+        }
+    });
+
+    return rawStrokes.map((stroke, sIdx) => {
+        return stroke.map((p, pIdx) => new THREE.Vector3(p.x, bridgeElevations[sIdx][pIdx], p.z));
+    });
+}
+
 function rebuildAllDominoes() {
     dominoes.forEach(d => d.destroy());
     dominoes = [];
+
     isSimulating = false;
     activeFallingDomino = null;
 
     const spacing = 0.8 * globalSizeScale * globalSpacingScale;
-    const minNodeGap = spacing * 0.65;
+    const processed3DStrokes = generate3DPathWithBridges(allStrokes3D);
 
-    allStrokes3D.forEach((points) => {
+    processed3DStrokes.forEach((points) => {
         if (points.length < 2) return;
 
         let accumulatedDist = 0;
@@ -978,17 +1118,21 @@ function rebuildAllDominoes() {
         for (let i = 1; i < points.length; i++) {
             const pCurr = points[i];
             const dx = pCurr.x - pPrev.x;
+            const dy = pCurr.y - pPrev.y;
             const dz = pCurr.z - pPrev.z;
-            const dist = Math.sqrt(dx * dx + dz * dz);
+            const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
             if (dist > 0.05) {
                 accumulatedDist += dist;
                 if (accumulatedDist >= spacing || lineDominoes.length === 0) {
                     let isDuplicate = false;
+                    const minNodeGap = spacing * 0.65;
+
                     for (let existing of dominoes) {
                         const edx = pCurr.x - existing.x;
+                        const edy = pCurr.y - existing.y;
                         const edz = pCurr.z - existing.z;
-                        if (Math.sqrt(edx * edx + edz * edz) < minNodeGap) {
+                        if (Math.sqrt(edx * edx + edy * edy + edz * edz) < minNodeGap) {
                             isDuplicate = true;
                             lineDominoes.push(existing);
                             break;
@@ -997,7 +1141,7 @@ function rebuildAllDominoes() {
 
                     if (!isDuplicate) {
                         const angleY = Math.atan2(dx, dz);
-                        const d = new DominoObject(pCurr.x, pCurr.z, angleY, globalSizeScale);
+                        const d = new DominoObject(pCurr.x, pCurr.y, pCurr.z, angleY, globalSizeScale);
                         dominoes.push(d);
                         lineDominoes.push(d);
                     }
@@ -1021,8 +1165,9 @@ function rebuildAllDominoes() {
                 const d1 = dominoes[i];
                 const d2 = dominoes[j];
                 const dx = d2.x - d1.x;
+                const dy = d2.y - d1.y;
                 const dz = d2.z - d1.z;
-                const dist = Math.sqrt(dx * dx + dz * dz);
+                const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
                 
                 if (dist <= maxSensorDist && !d1.neighbors.includes(d2)) {
                     d1.neighbors.push(d2);
@@ -1034,7 +1179,18 @@ function rebuildAllDominoes() {
 
 function undoLastStroke() {
     if (allStrokes3D.length > 0) {
+        const removedIdx = allStrokes3D.length - 1;
         allStrokes3D.pop();
+
+        bridgeControls = bridgeControls.filter(ctrl => {
+            if (ctrl.strokeIdx === removedIdx) {
+                if (ctrl.startMesh) scene.remove(ctrl.startMesh);
+                if (ctrl.endMesh) scene.remove(ctrl.endMesh);
+                return false;
+            }
+            return true;
+        });
+
         rebuildAllDominoes();
         updateDrawLineMeshes();
     }
@@ -1051,12 +1207,14 @@ function updateDrawLineMeshes() {
         strokesToRender.push(currentStroke);
     }
 
-    strokesToRender.forEach(pts => {
+    const processed3DStrokes = generate3DPathWithBridges(strokesToRender);
+
+    processed3DStrokes.forEach(pts => {
         if (pts.length < 2) return;
         const geometry = new THREE.BufferGeometry().setFromPoints(pts);
         const material = new THREE.LineBasicMaterial({ color: 0xfbbf24, linewidth: 3 });
         const lineMesh = new THREE.Line(geometry, material);
-        lineMesh.position.y = 0.02;
+        lineMesh.position.y += 0.02;
         scene.add(lineMesh);
         lineMeshes.push(lineMesh);
     });
@@ -1080,6 +1238,24 @@ function onPointerDown(e) {
     lastPointer = { x: e.clientX, y: e.clientY };
 
     const pt = getGroundIntersection(e.clientX, e.clientY);
+
+    // 模式 1：新增陸橋兩點選擇
+    if (isAddingBridge) {
+        handleTwoPointBridgePlacement(pt);
+        return;
+    }
+
+    // 模式 2：拖曳紅球微調起訖點
+    for (let ctrl of bridgeControls) {
+        if (ctrl.startMesh && pt.distanceTo(ctrl.startMesh.position) < 1.6) {
+            activeBridgeControl = { ctrl: ctrl, isStart: true };
+            return;
+        }
+        if (ctrl.endMesh && pt.distanceTo(ctrl.endMesh.position) < 1.6) {
+            activeBridgeControl = { ctrl: ctrl, isStart: false };
+            return;
+        }
+    }
 
     if (appMode === 'DRAW') {
         for (let bIdx = 0; bIdx < textBlocks.length; bIdx++) {
@@ -1131,7 +1307,33 @@ function onPointerMove(e) {
     const dx = e.clientX - lastPointer.x;
     const dy = e.clientY - lastPointer.y;
 
-    if (appMode === 'DRAW') {
+    if (activeBridgeControl) {
+        const pt = getGroundIntersection(e.clientX, e.clientY);
+        const ctrl = activeBridgeControl.ctrl;
+        const stroke = allStrokes3D[ctrl.strokeIdx];
+
+        if (stroke) {
+            let closestIdx = 0;
+            let minDist = Infinity;
+            stroke.forEach((p, idx) => {
+                const d = pt.distanceTo(new THREE.Vector3(p.x, 0, p.z));
+                if (d < minDist) {
+                    minDist = d;
+                    closestIdx = idx;
+                }
+            });
+
+            if (activeBridgeControl.isStart) {
+                ctrl.startIdx = Math.min(ctrl.endIdx - 1, closestIdx);
+            } else {
+                ctrl.endIdx = Math.max(ctrl.startIdx + 1, closestIdx);
+            }
+
+            rebuildAllDominoes();
+            updateDrawLineMeshes();
+        }
+    }
+    else if (appMode === 'DRAW' && !isAddingBridge) {
         if (isResizingCorner !== -1 && activeTextBlockIndex !== -1) {
             const tb = textBlocks[activeTextBlockIndex];
             const pt = getGroundIntersection(e.clientX, e.clientY);
@@ -1187,8 +1389,9 @@ function onPointerMove(e) {
 function onPointerUp() {
     isDraggingText = false;
     isResizingCorner = -1;
+    activeBridgeControl = null;
 
-    if (appMode === 'DRAW' && isDragging && isDrawEnabled && currentStroke.length > 1) {
+    if (appMode === 'DRAW' && isDragging && isDrawEnabled && !isAddingBridge && currentStroke.length > 1) {
         allStrokes3D.push([...currentStroke]);
         rebuildAllDominoes();
         currentStroke = [];
@@ -1279,6 +1482,26 @@ function onWindowResize() {
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
+document.getElementById('addBridgeBtn').onclick = () => {
+    if (allStrokes3D.length === 0) return;
+
+    isAddingBridge = !isAddingBridge;
+    bridgeFirstPoint = null;
+
+    const btn = document.getElementById('addBridgeBtn');
+    if (isAddingBridge) {
+        btn.classList.add('active');
+        btn.innerText = '📍 請點第一點(起點)';
+
+        // 🎯 自動暫停畫線，避免誤畫線條
+        isDrawEnabled = false;
+        drawToggleBtn.innerText = '⏸ 畫線已暫停';
+        drawToggleBtn.classList.add('paused');
+    } else {
+        cancelAddBridge();
+    }
+};
+
 document.getElementById('sizeSlider').addEventListener('input', (e) => {
     globalSizeScale = parseFloat(e.target.value);
     document.getElementById('sizeVal').innerText = `${globalSizeScale.toFixed(1)}x`;
@@ -1343,12 +1566,17 @@ panToggleBtn.onclick = () => {
 };
 
 drawToggleBtn.onclick = () => {
+    // 🎯 若未完成陸橋設定就點擊切換畫線，取消該陸橋設定
+    if (isAddingBridge) {
+        cancelAddBridge();
+    }
+
     isDrawEnabled = !isDrawEnabled;
     if (isDrawEnabled) {
         drawToggleBtn.innerText = '✏️ 畫線中（點擊暫停）';
         drawToggleBtn.classList.remove('paused');
     } else {
-        drawToggleBtn.innerText = '⏸️ 畫線已暫停';
+        drawToggleBtn.innerText = '⏸ 畫線已暫停';
         drawToggleBtn.classList.add('paused');
     }
 };
@@ -1378,6 +1606,9 @@ document.getElementById('modeBtn').onclick = () => {
         updateOrthoCamera();
         updateDrawLineMeshes();
     } else {
+        if (isAddingBridge) {
+            cancelAddBridge();
+        }
         appMode = 'VIEW';
         camera = camera3D;
         document.getElementById('modeBtn').innerText = '✏ 畫線';
@@ -1393,6 +1624,10 @@ document.getElementById('modeBtn').onclick = () => {
 
 document.getElementById('startBtn').onclick = () => {
     if (dominoes.length > 0) {
+        if (isAddingBridge) {
+            cancelAddBridge();
+        }
+
         bookmarkCameraPos.copy(targetCameraPos);
         bookmarkLookAtPos.copy(targetLookAtPos);
 
@@ -1415,7 +1650,14 @@ document.getElementById('resetBtn').onclick = () => {
     currentStroke = [];
     lineMeshes.forEach(m => scene.remove(m));
     lineMeshes = [];
-    
+
+    bridgeControls.forEach(ctrl => {
+        if (ctrl.startMesh) scene.remove(ctrl.startMesh);
+        if (ctrl.endMesh) scene.remove(ctrl.endMesh);
+    });
+    bridgeControls = [];
+    cancelAddBridge();
+
     textBlocks.forEach(tb => tb.destroy());
     textBlocks = [];
     
@@ -1448,7 +1690,7 @@ function animate() {
 
         if (isAnyDominoStillFalling) {
             if (activeFallingDomino && isTrackingEnabled && !isUserInteracting && appMode === 'VIEW') {
-                const targetPos = new THREE.Vector3(activeFallingDomino.x, 0, activeFallingDomino.z);
+                const targetPos = new THREE.Vector3(activeFallingDomino.x, activeFallingDomino.y, activeFallingDomino.z);
                 targetLookAtPos.lerp(targetPos, 0.08);
 
                 const offset = new THREE.Vector3(0, 10, 14);

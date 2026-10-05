@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>3D GLB 骨牌手繪模擬器 - 錄影存檔版</title>
+    <title>3D GLB 骨牌手繪模擬器 - 介面修復版</title>
     <style>
         * {
             box-sizing: border-box;
@@ -34,28 +34,28 @@
             top: 10px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(15, 23, 42, 0.65);
+            background: rgba(15, 23, 42, 0.75);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            padding: 8px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 6px 8px;
             border-radius: 16px;
             display: flex;
             flex-direction: column;
             gap: 6px;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.4);
             z-index: 1000;
-            width: 92%;
-            max-width: 480px;
+            width: 96%;
+            max-width: 520px;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             max-height: 420px;
             overflow: hidden;
         }
         .ui-panel.collapsed {
-            max-height: 44px;
-            padding: 6px 10px;
-            background: rgba(15, 23, 42, 0.45);
-            border-color: rgba(255, 255, 255, 0.08);
+            max-height: 46px;
+            padding: 6px 8px;
+            background: rgba(15, 23, 42, 0.55);
+            border-color: rgba(255, 255, 255, 0.1);
         }
         .ui-panel.collapsed .ui-collapsible {
             opacity: 0;
@@ -73,7 +73,14 @@
             gap: 6px;
             transition: opacity 0.2s ease, transform 0.2s ease;
         }
-        .ui-header-row, .ui-row {
+        .ui-header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 4px;
+            width: 100%;
+        }
+        .ui-row {
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -92,7 +99,7 @@
             color: #fff;
             padding: 4px 8px;
             border-radius: 6px;
-            font-size: 12px;
+            font-size: 11px;
             outline: none;
             user-select: text;
             -webkit-user-select: text;
@@ -133,7 +140,7 @@
             background: rgba(245, 158, 11, 0.25) !important;
             border: 1px solid rgba(245, 158, 11, 0.4) !important;
             color: #fcd34d !important;
-            flex: 0.6 !important;
+            flex: 0.7 !important;
         }
         .btn-record {
             background: linear-gradient(135deg, #ef4444, #b91c1c) !important;
@@ -160,12 +167,12 @@
             background: linear-gradient(135deg, #3b82f6, #1d4ed8);
             color: #fff;
             border: none;
-            padding: 6px 10px;
-            border-radius: 10px;
+            padding: 6px 6px;
+            border-radius: 8px;
             font-weight: bold;
-            font-size: 12px;
+            font-size: 11px;
             cursor: pointer;
-            box-shadow: 0 3px 8px rgba(59, 130, 246, 0.25);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
             white-space: nowrap;
             flex: 1;
             text-align: center;
@@ -179,14 +186,16 @@
             flex: 0.5;
         }
         .btn-toggle-panel {
-            background: rgba(255, 255, 255, 0.15);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.18);
+            border: 1px solid rgba(255, 255, 255, 0.25);
             border-radius: 8px;
             color: #fff;
-            padding: 4px 8px;
+            padding: 6px 8px;
             font-size: 11px;
+            font-weight: bold;
             cursor: pointer;
             white-space: nowrap;
+            flex-shrink: 0;
         }
 
         /* 底部橫向並排控制按鈕 */
@@ -242,10 +251,10 @@
 
 <div class="ui-panel collapsed" id="uiPanel">
     <div class="ui-header-row">
-        <button class="btn btn-mode" id="modeBtn">✏ 畫線模式</button>
+        <button class="btn btn-mode" id="modeBtn">✏ 畫線</button>
         <button class="btn btn-undo" id="undoBtn">↩ 復原</button>
-        <button class="btn" id="startBtn">▶ 推倒骨牌</button>
-        <button class="btn btn-record" id="recordBtn">📹 錄影並推倒</button>
+        <button class="btn" id="startBtn">▶ 推倒</button>
+        <button class="btn btn-record" id="recordBtn">📹 錄影推倒</button>
         <button class="btn btn-reset" id="resetBtn">↺ 清除</button>
         <button class="btn-toggle-panel" id="togglePanelBtn">🔽 展開</button>
     </div>
@@ -294,7 +303,7 @@ let isDrawEnabled = true;
 let isTrackingEnabled = true;
 let is3DPanMode = false;
 
-// 【錄影模組變數】
+// 錄影模組變數
 let mediaRecorder = null;
 let recordedChunks = [];
 let isRecording = false;
@@ -374,7 +383,6 @@ function setSimulationUiState(hide) {
     }
 }
 
-// 【錄影開始與存檔機制】
 function startRecordingAndSimulate() {
     if (dominoes.length === 0) return;
 
@@ -404,7 +412,6 @@ function startRecordingAndSimulate() {
     mediaRecorder.start();
     isRecording = true;
 
-    // 開始推倒骨牌
     document.getElementById('startBtn').click();
 }
 
@@ -1361,7 +1368,7 @@ document.getElementById('modeBtn').onclick = () => {
     if (appMode === 'VIEW') {
         appMode = 'DRAW';
         camera = camera2D;
-        document.getElementById('modeBtn').innerText = '🖐 視角模式';
+        document.getElementById('modeBtn').innerText = '🖐 視角';
         document.getElementById('modeBtn').style.background = '#f59e0b';
         
         panToggleBtn.style.display = 'none';
@@ -1373,7 +1380,7 @@ document.getElementById('modeBtn').onclick = () => {
     } else {
         appMode = 'VIEW';
         camera = camera3D;
-        document.getElementById('modeBtn').innerText = '✏️ 畫線模式';
+        document.getElementById('modeBtn').innerText = '✏ 畫線';
         document.getElementById('modeBtn').style.background = '#10b981';
 
         panToggleBtn.style.display = 'block';
@@ -1457,7 +1464,6 @@ function animate() {
 
             setSimulationUiState(false);
 
-            // 若在錄影狀態下，無骨牌繼續傾倒且視角歸位後，自動停止錄影並下載
             if (isRecording) {
                 stopRecordingAndSave();
             }

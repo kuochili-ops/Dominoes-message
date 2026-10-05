@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>3D GLB 骨牌手繪模擬器 - 極簡無遮蔽 UI 版</title>
+    <title>3D GLB 骨牌手繪模擬器 - 錄影存檔版</title>
     <style>
         * {
             box-sizing: border-box;
@@ -45,8 +45,8 @@
             gap: 6px;
             box-shadow: 0 8px 20px rgba(0,0,0,0.3);
             z-index: 1000;
-            width: 90%;
-            max-width: 380px;
+            width: 92%;
+            max-width: 480px;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             max-height: 420px;
             overflow: hidden;
@@ -61,6 +61,11 @@
             opacity: 0;
             pointer-events: none;
             transform: translateY(-8px);
+        }
+        .ui-panel.sim-hidden {
+            opacity: 0 !important;
+            pointer-events: none !important;
+            transform: translate(-50%, -20px) !important;
         }
         .ui-collapsible {
             display: flex;
@@ -118,6 +123,22 @@
             background: linear-gradient(135deg, #ec4899, #be185d) !important;
             box-shadow: 0 2px 8px rgba(236, 72, 153, 0.25) !important;
         }
+        .btn-del-text {
+            background: rgba(239, 68, 68, 0.25) !important;
+            border: 1px solid rgba(239, 68, 68, 0.4) !important;
+            color: #fca5a5 !important;
+            flex: 0.6 !important;
+        }
+        .btn-undo {
+            background: rgba(245, 158, 11, 0.25) !important;
+            border: 1px solid rgba(245, 158, 11, 0.4) !important;
+            color: #fcd34d !important;
+            flex: 0.6 !important;
+        }
+        .btn-record {
+            background: linear-gradient(135deg, #ef4444, #b91c1c) !important;
+            box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3) !important;
+        }
         .slider-row {
             font-size: 11px;
             color: #9ca3af;
@@ -168,19 +189,19 @@
             white-space: nowrap;
         }
 
-        /* 右下角透亮圓角控制按鈕 */
+        /* 底部橫向並排控制按鈕 */
         .bottom-right-controls {
             position: absolute;
             bottom: 16px;
             right: 14px;
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
             gap: 8px;
-            align-items: flex-end;
+            align-items: center;
             z-index: 1000;
         }
         .bottom-right-btn {
-            background: rgba(15, 23, 42, 0.6);
+            background: rgba(15, 23, 42, 0.65);
             color: #fff;
             border: 1px solid rgba(255, 255, 255, 0.18);
             padding: 8px 14px;
@@ -190,7 +211,11 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             cursor: pointer;
             backdrop-filter: blur(10px);
-            transition: all 0.2s ease;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            white-space: nowrap;
+        }
+        .bottom-right-btn.sim-hidden {
+            display: none !important;
         }
         .bottom-right-btn.pan-btn.active {
             background: rgba(236, 72, 153, 0.8);
@@ -203,26 +228,9 @@
         .bottom-right-btn.draw-btn.paused {
             background: rgba(239, 68, 68, 0.8);
         }
-        .bottom-right-btn.line-btn.hidden, .bottom-right-btn.track-btn.off {
+        .bottom-right-btn.track-btn.off {
             background: rgba(75, 85, 99, 0.6);
             color: #d1d5db;
-        }
-
-        /* 底部提示小膠囊 */
-        .hint-badge {
-            position: absolute;
-            bottom: 16px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(15, 23, 42, 0.6);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 4px 14px;
-            border-radius: 16px;
-            font-size: 11px;
-            color: #38bdf8;
-            pointer-events: none;
-            white-space: nowrap;
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -234,8 +242,10 @@
 
 <div class="ui-panel collapsed" id="uiPanel">
     <div class="ui-header-row">
-        <button class="btn btn-mode" id="modeBtn">✏️️ 畫線模式</button>
+        <button class="btn btn-mode" id="modeBtn">✏ 畫線模式</button>
+        <button class="btn btn-undo" id="undoBtn">↩ 復原</button>
         <button class="btn" id="startBtn">▶ 推倒骨牌</button>
+        <button class="btn btn-record" id="recordBtn">📹 錄影並推倒</button>
         <button class="btn btn-reset" id="resetBtn">↺ 清除</button>
         <button class="btn-toggle-panel" id="togglePanelBtn">🔽 展開</button>
     </div>
@@ -244,6 +254,7 @@
         <div class="ui-row text-input-row">
             <input type="text" id="dominoTextInput" placeholder="輸入中文文字" value="𓃥 白六向您問安">
             <button class="btn btn-add-text" id="addTextBtn">➕ 新增文字區</button>
+            <button class="btn btn-del-text" id="delTextBtn">🗑️ 刪除</button>
         </div>
 
         <div class="ui-row color-picker-row">
@@ -267,13 +278,10 @@
 </div>
 
 <div class="bottom-right-controls">
+    <button class="bottom-right-btn track-btn" id="trackToggleBtn">🎥 追蹤攝影：開啟</button>
     <button class="bottom-right-btn pan-btn" id="panToggleBtn">🖐 旋轉中（點擊切平移）</button>
     <button class="bottom-right-btn draw-btn" id="drawToggleBtn">✏️ 畫線中（點擊暫停）</button>
-    <button class="bottom-right-btn track-btn" id="trackToggleBtn">🎥 追蹤攝影：開啟</button>
-    <button class="bottom-right-btn line-btn" id="lineToggleBtn">📍 標線：顯示中</button>
 </div>
-
-<div class="hint-badge" id="hintText">已極簡化 UI，減少畫面遮蔽！點擊頂部可隨時展開設定</div>
 
 <script>
 let scene, camera, camera3D, camera2D, renderer;
@@ -283,9 +291,13 @@ let dominoes = [];
 let isSimulating = false;
 let appMode = 'VIEW';
 let isDrawEnabled = true;
-let isLineVisible = true;
 let isTrackingEnabled = true;
 let is3DPanMode = false;
+
+// 【錄影模組變數】
+let mediaRecorder = null;
+let recordedChunks = [];
+let isRecording = false;
 
 let globalSizeScale = 1.0; 
 let globalSpacingScale = 1.4;
@@ -323,7 +335,8 @@ let touchStartDist = 0;
 
 const uiPanel = document.getElementById('uiPanel');
 const togglePanelBtn = document.getElementById('togglePanelBtn');
-let isPanelCollapsed = true; // 預設收合以減少遮蔽
+
+let isPanelCollapsed = true;
 
 function togglePanel(collapse) {
     if (collapse !== undefined) {
@@ -346,6 +359,77 @@ togglePanelBtn.onclick = (e) => {
     togglePanel();
 };
 
+function setSimulationUiState(hide) {
+    if (hide) {
+        uiPanel.classList.add('sim-hidden');
+        panToggleBtn.classList.add('sim-hidden');
+        drawToggleBtn.classList.add('sim-hidden');
+    } else {
+        uiPanel.classList.remove('sim-hidden');
+        if (appMode === 'VIEW') {
+            panToggleBtn.classList.remove('sim-hidden');
+        } else {
+            drawToggleBtn.classList.remove('sim-hidden');
+        }
+    }
+}
+
+// 【錄影開始與存檔機制】
+function startRecordingAndSimulate() {
+    if (dominoes.length === 0) return;
+
+    recordedChunks = [];
+    const canvas = renderer.domElement;
+    const stream = canvas.captureStream(60); 
+
+    let mimeType = 'video/webm;codecs=vp9';
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'video/webm';
+    }
+
+    try {
+        mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType, videoBitsPerSecond: 5000000 });
+    } catch (e) {
+        mediaRecorder = new MediaRecorder(stream);
+    }
+
+    mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+            recordedChunks.push(event.data);
+        }
+    };
+
+    mediaRecorder.onstop = saveVideoFile;
+
+    mediaRecorder.start();
+    isRecording = true;
+
+    // 開始推倒骨牌
+    document.getElementById('startBtn').click();
+}
+
+function stopRecordingAndSave() {
+    if (mediaRecorder && isRecording) {
+        isRecording = false;
+        mediaRecorder.stop();
+    }
+}
+
+function saveVideoFile() {
+    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = `Domino_Simulation_${Date.now()}.webm`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    }, 100);
+}
+
 function initThree() {
     const container = document.getElementById('webgl-container');
     const aspect = window.innerWidth / window.innerHeight;
@@ -367,7 +451,7 @@ function initThree() {
 
     camera = camera3D;
 
-    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", preserveDrawingBuffer: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
@@ -478,8 +562,8 @@ class TextBlock {
         this.text = text;
         this.color = color;
         this.pos = position.clone();
-        this.width = 8.0;
-        this.height = 3.5;
+        this.width = 6.5;
+        this.height = 2.2;
         this.isRevealed = false;
 
         this.group = new THREE.Group();
@@ -507,8 +591,8 @@ class TextBlock {
             lines = [this.text.slice(0, mid), this.text.slice(mid)];
         }
 
-        const safeWidth = canvas.width * 0.85;
-        const safeHeight = canvas.height * 0.85;
+        const safeWidth = canvas.width * 0.95;
+        const safeHeight = canvas.height * 0.95;
 
         let fontSize = safeHeight / lines.length;
 
@@ -528,9 +612,9 @@ class TextBlock {
         ctx.textBaseline = 'middle';
         ctx.fillStyle = this.color;
         ctx.shadowColor = this.color;
-        ctx.shadowBlur = Math.min(25, fontSize * 0.3);
+        ctx.shadowBlur = Math.min(20, fontSize * 0.25);
 
-        const lineHeight = fontSize * 1.15;
+        const lineHeight = fontSize * 1.05;
         const startY = (canvas.height / 2) - ((lines.length - 1) * lineHeight / 2);
 
         lines.forEach((line, idx) => {
@@ -542,7 +626,7 @@ class TextBlock {
         this.topTextMaterial = new THREE.MeshStandardMaterial({
             map: texture,
             transparent: true,
-            opacity: appMode === 'DRAW' ? 0.8 : 0,
+            opacity: appMode === 'DRAW' ? 0.85 : 0,
             emissive: new THREE.Color(this.color),
             emissiveMap: texture,
             emissiveIntensity: 0
@@ -576,13 +660,13 @@ class TextBlock {
             color: 0xfbbf24, 
             wireframe: true, 
             transparent: true, 
-            opacity: appMode === 'DRAW' ? 0.7 : 0 
+            opacity: appMode === 'DRAW' ? 0.8 : 0 
         });
         this.textBoundingBoxMesh = new THREE.Mesh(wireGeo, wireMat);
         this.textBoundingBoxMesh.position.y = 0.05;
         this.group.add(this.textBoundingBoxMesh);
 
-        const handleGeo = new THREE.BoxGeometry(0.5, 0.12, 0.5);
+        const handleGeo = new THREE.BoxGeometry(0.35, 0.1, 0.35);
         const handleMat = new THREE.MeshBasicMaterial({ 
             color: 0xef4444, 
             transparent: true, 
@@ -609,10 +693,10 @@ class TextBlock {
 
     updateModeState() {
         if (appMode === 'DRAW') {
-            if (this.topTextMaterial) this.topTextMaterial.opacity = 0.8;
+            if (this.topTextMaterial) this.topTextMaterial.opacity = 0.85;
             if (this.sideMaterial) this.sideMaterial.opacity = 0.6;
             if (this.landMesh) this.landMesh.position.y = 0;
-            if (this.textBoundingBoxMesh) this.textBoundingBoxMesh.material.opacity = 0.7;
+            if (this.textBoundingBoxMesh) this.textBoundingBoxMesh.material.opacity = 0.8;
             this.cornerHandles.forEach(h => h.material.opacity = 0.9);
         } else {
             this.isRevealed = false;
@@ -625,6 +709,20 @@ class TextBlock {
             if (this.textBoundingBoxMesh) this.textBoundingBoxMesh.material.opacity = 0;
             this.cornerHandles.forEach(h => h.material.opacity = 0);
         }
+    }
+
+    triggerOverlappingDominoes() {
+        dominoes.forEach(d => {
+            if (!d.isTriggered) {
+                const dx = Math.abs(d.x - this.pos.x);
+                const dz = Math.abs(d.z - this.pos.z);
+
+                if (dx <= (this.width / 2 + 0.2) && dz <= (this.height / 2 + 0.2)) {
+                    d.isTriggered = true;
+                    d.tiltVel = 0.02;
+                }
+            }
+        });
     }
 
     animateRise() {
@@ -645,7 +743,23 @@ class TextBlock {
 function addTextBlock(text, color, pos) {
     const tb = new TextBlock(text, color, pos);
     textBlocks.push(tb);
+    activeTextBlockIndex = textBlocks.length - 1;
     return tb;
+}
+
+function deleteActiveTextBlock() {
+    if (textBlocks.length === 0) return;
+    
+    let targetIndex = activeTextBlockIndex;
+    if (targetIndex < 0 || targetIndex >= textBlocks.length) {
+        targetIndex = textBlocks.length - 1;
+    }
+
+    const removed = textBlocks.splice(targetIndex, 1)[0];
+    if (removed) {
+        removed.destroy();
+    }
+    activeTextBlockIndex = textBlocks.length - 1;
 }
 
 function spawnFireworksForBlock(tb) {
@@ -793,13 +907,13 @@ class DominoObject {
                     if (dx <= (tb.width / 2) && dz <= (tb.height / 2) && this.tilt > 0.15) {
                         tb.isRevealed = true;
                         spawnFireworksForBlock(tb);
-                        document.getElementById('hintText').innerText = `🎆 骨牌推倒！「${tb.text}」隆起升起！`;
+                        tb.triggerOverlappingDominoes();
                     }
                 }
             });
 
             const dominoHeight = BASE_DOMINO_HEIGHT * this.sizeScale;
-            const maxReachDistance = dominoHeight * 0.95;
+            const maxReachDistance = dominoHeight * 1.12;
 
             for (let next of this.neighbors) {
                 if (!next.isTriggered) {
@@ -809,7 +923,9 @@ class DominoObject {
 
                     if (dist < maxReachDistance && this.tilt > 0.15) {
                         const forwardAngle = Math.atan2(dx, dz);
-                        next.setAngleY(forwardAngle);
+                        if (Math.abs(next.angleY - forwardAngle) > 0.5) {
+                            next.setAngleY(forwardAngle);
+                        }
                         next.isTriggered = true;
                     }
                 }
@@ -867,6 +983,7 @@ function rebuildAllDominoes() {
                         const edz = pCurr.z - existing.z;
                         if (Math.sqrt(edx * edx + edz * edz) < minNodeGap) {
                             isDuplicate = true;
+                            lineDominoes.push(existing);
                             break;
                         }
                     }
@@ -884,11 +1001,13 @@ function rebuildAllDominoes() {
         }
 
         for (let i = 0; i < lineDominoes.length - 1; i++) {
-            lineDominoes[i].neighbors.push(lineDominoes[i + 1]);
+            if (!lineDominoes[i].neighbors.includes(lineDominoes[i + 1])) {
+                lineDominoes[i].neighbors.push(lineDominoes[i + 1]);
+            }
         }
     });
 
-    const maxSensorDist = BASE_DOMINO_HEIGHT * globalSizeScale * 0.98;
+    const maxSensorDist = BASE_DOMINO_HEIGHT * globalSizeScale * 1.05;
     for (let i = 0; i < dominoes.length; i++) {
         for (let j = 0; j < dominoes.length; j++) {
             if (i !== j) {
@@ -906,11 +1025,19 @@ function rebuildAllDominoes() {
     }
 }
 
+function undoLastStroke() {
+    if (allStrokes3D.length > 0) {
+        allStrokes3D.pop();
+        rebuildAllDominoes();
+        updateDrawLineMeshes();
+    }
+}
+
 function updateDrawLineMeshes() {
     lineMeshes.forEach(m => scene.remove(m));
     lineMeshes = [];
 
-    if (!isLineVisible && appMode === 'VIEW') return;
+    if (appMode === 'VIEW') return;
 
     const strokesToRender = [...allStrokes3D];
     if (currentStroke.length > 1) {
@@ -1003,8 +1130,8 @@ function onPointerMove(e) {
             const pt = getGroundIntersection(e.clientX, e.clientY);
             const localPt = tb.group.worldToLocal(pt.clone());
 
-            tb.width = Math.max(2.0, Math.abs(localPt.x) * 2);
-            tb.height = Math.max(1.5, Math.abs(localPt.z) * 2);
+            tb.width = Math.max(1.5, Math.abs(localPt.x) * 2);
+            tb.height = Math.max(1.0, Math.abs(localPt.z) * 2);
 
             tb.createMesh();
             tb.updateModeState();
@@ -1179,12 +1306,22 @@ document.getElementById('addTextBtn').onclick = () => {
     
     const tb = addTextBlock(txt, currentTextColor, newPos);
     tb.updateModeState();
-    document.getElementById('hintText').innerText = `已新增文字區「${txt}」！`;
+};
+
+document.getElementById('delTextBtn').onclick = () => {
+    deleteActiveTextBlock();
+};
+
+document.getElementById('undoBtn').onclick = () => {
+    undoLastStroke();
+};
+
+document.getElementById('recordBtn').onclick = () => {
+    startRecordingAndSimulate();
 };
 
 const panToggleBtn = document.getElementById('panToggleBtn');
 const drawToggleBtn = document.getElementById('drawToggleBtn');
-const lineToggleBtn = document.getElementById('lineToggleBtn');
 const trackToggleBtn = document.getElementById('trackToggleBtn');
 
 panToggleBtn.onclick = () => {
@@ -1192,11 +1329,9 @@ panToggleBtn.onclick = () => {
     if (is3DPanMode) {
         panToggleBtn.innerText = '✋ 平移中（點擊切旋轉）';
         panToggleBtn.classList.add('active');
-        document.getElementById('hintText').innerText = '3D 手勢：單指滑動平移全景';
     } else {
         panToggleBtn.innerText = '🖐 旋轉中（點擊切平移）';
         panToggleBtn.classList.remove('active');
-        document.getElementById('hintText').innerText = '3D 手勢：單指滑動旋轉視角';
     }
 };
 
@@ -1205,33 +1340,19 @@ drawToggleBtn.onclick = () => {
     if (isDrawEnabled) {
         drawToggleBtn.innerText = '✏️ 畫線中（點擊暫停）';
         drawToggleBtn.classList.remove('paused');
-        document.getElementById('hintText').innerText = '模式：✏ 單指畫線';
     } else {
         drawToggleBtn.innerText = '⏸️ 畫線已暫停';
         drawToggleBtn.classList.add('paused');
-        document.getElementById('hintText').innerText = '模式：⏸ 單指平移，雙指縮放';
     }
-};
-
-lineToggleBtn.onclick = () => {
-    isLineVisible = !isLineVisible;
-    if (isLineVisible) {
-        lineToggleBtn.innerText = '📍 標線：顯示';
-        lineToggleBtn.classList.remove('hidden');
-    } else {
-        lineToggleBtn.innerText = '🙈 標線：隱藏';
-        lineToggleBtn.classList.add('hidden');
-    }
-    updateDrawLineMeshes();
 };
 
 trackToggleBtn.onclick = () => {
     isTrackingEnabled = !isTrackingEnabled;
     if (isTrackingEnabled) {
-        trackToggleBtn.innerText = '🎥 追蹤：開啟';
+        trackToggleBtn.innerText = '🎥 追蹤攝影：開啟';
         trackToggleBtn.classList.remove('off');
     } else {
-        trackToggleBtn.innerText = '🎥 追蹤：關閉';
+        trackToggleBtn.innerText = '🎥 追蹤攝影：關閉';
         trackToggleBtn.classList.add('off');
     }
 };
@@ -1242,12 +1363,9 @@ document.getElementById('modeBtn').onclick = () => {
         camera = camera2D;
         document.getElementById('modeBtn').innerText = '🖐 視角模式';
         document.getElementById('modeBtn').style.background = '#f59e0b';
-        document.getElementById('hintText').innerText = '目前模式：✏ 2D 正投影畫線';
         
         panToggleBtn.style.display = 'none';
         drawToggleBtn.style.display = 'block';
-        lineToggleBtn.style.display = 'none';
-        trackToggleBtn.style.display = 'none';
 
         textBlocks.forEach(tb => tb.updateModeState());
         updateOrthoCamera();
@@ -1257,12 +1375,9 @@ document.getElementById('modeBtn').onclick = () => {
         camera = camera3D;
         document.getElementById('modeBtn').innerText = '✏️ 畫線模式';
         document.getElementById('modeBtn').style.background = '#10b981';
-        document.getElementById('hintText').innerText = '目前模式：🖐 3D 視角觀察';
 
         panToggleBtn.style.display = 'block';
         drawToggleBtn.style.display = 'none';
-        lineToggleBtn.style.display = 'block';
-        trackToggleBtn.style.display = 'block';
 
         textBlocks.forEach(tb => tb.updateModeState());
         updateDrawLineMeshes();
@@ -1281,6 +1396,8 @@ document.getElementById('startBtn').onclick = () => {
         if (appMode === 'DRAW') {
             document.getElementById('modeBtn').click();
         }
+
+        setSimulationUiState(true);
     }
 };
 
@@ -1303,6 +1420,7 @@ document.getElementById('resetBtn').onclick = () => {
     fireworksParticles = [];
 
     addTextBlock("𓃥 白六向您問安", currentTextColor, new THREE.Vector3(0, 0, 0));
+    setSimulationUiState(false);
 };
 
 function animate() {
@@ -1335,6 +1453,13 @@ function animate() {
             if (isTrackingEnabled && !isUserInteracting && appMode === 'VIEW') {
                 targetCameraPos.lerp(bookmarkCameraPos, 0.05);
                 targetLookAtPos.lerp(bookmarkLookAtPos, 0.05);
+            }
+
+            setSimulationUiState(false);
+
+            // 若在錄影狀態下，無骨牌繼續傾倒且視角歸位後，自動停止錄影並下載
+            if (isRecording) {
+                stopRecordingAndSave();
             }
         }
     }
